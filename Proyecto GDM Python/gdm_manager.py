@@ -41,7 +41,7 @@ from virtual_gamepad import (
 )
 
 
-APP_NAME = "GDM Gamepad Device Manager"
+APP_NAME = "GDM Python Beta"
 APP_VERSION = "0.1.0"
 APP_ICON_PATH = Path(__file__).with_name("gdm_icon.ico")
 HIDHIDE_RELEASES_URL = "https://github.com/nefarius/HidHide/releases"
