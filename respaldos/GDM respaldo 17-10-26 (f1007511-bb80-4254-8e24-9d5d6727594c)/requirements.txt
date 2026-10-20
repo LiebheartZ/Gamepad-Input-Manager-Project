@@ -1,0 +1,9 @@
+pygame-ce>=2.5.0
+Pillow>=10.0.0
+hidapi>=0.14.0
+pystray>=0.19.5
+winrt-Windows.Devices.Bluetooth>=3.2.1; sys_platform == "win32"
+winrt-Windows.Devices.Enumeration>=3.2.1; sys_platform == "win32"
+winrt-Windows.Devices.Radios>=3.2.1; sys_platform == "win32"
+winrt-Windows.Foundation>=3.2.1; sys_platform == "win32"
+winrt-Windows.Foundation.Collections>=3.2.1; sys_platform == "win32"
