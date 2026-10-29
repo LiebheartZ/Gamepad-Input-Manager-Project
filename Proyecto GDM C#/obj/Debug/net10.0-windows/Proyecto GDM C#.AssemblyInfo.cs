@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Proyecto GDM C#")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+48def8acbd37b1128a0dc83fb106885d38da1827")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0f329b7fcf6b2a5fcf044c71d8de938a952858c8")]
 [assembly: System.Reflection.AssemblyProductAttribute("Proyecto GDM C#")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Proyecto GDM C#")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
