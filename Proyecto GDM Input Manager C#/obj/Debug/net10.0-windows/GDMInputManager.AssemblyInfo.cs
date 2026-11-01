@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("GDMInputManager")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0f329b7fcf6b2a5fcf044c71d8de938a952858c8")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c83690431b3d1b4ad06483651a9d75c7c95d0ed6")]
 [assembly: System.Reflection.AssemblyProductAttribute("GDMInputManager")]
 [assembly: System.Reflection.AssemblyTitleAttribute("GDMInputManager")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

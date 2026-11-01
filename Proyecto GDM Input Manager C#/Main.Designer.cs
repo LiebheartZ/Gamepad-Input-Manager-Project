@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Drawing;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using GDMInputManager.Controls;
 
@@ -91,9 +90,26 @@ partial class Main
         lblTitle.ForeColor = Color.White;
         lblTitle.TextAlign = ContentAlignment.MiddleLeft;
 
+        pictureBoxBluetoothStatus = new PictureBox();
+        pictureBoxBluetoothStatus.Location = new Point(744, 13);
+        pictureBoxBluetoothStatus.Size = new Size(30, 34);
+        pictureBoxBluetoothStatus.SizeMode = PictureBoxSizeMode.CenterImage;
+        pictureBoxBluetoothStatus.BackColor = Color.Transparent;
+
+        lblBluetoothStatus = new Label();
+        lblBluetoothStatus.Location = new Point(778, 15);
+        lblBluetoothStatus.Size = new Size(110, 30);
+        lblBluetoothStatus.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        lblBluetoothStatus.Font = new Font("Microsoft Sans Serif", 8.5F, FontStyle.Bold);
+        lblBluetoothStatus.ForeColor = Color.White;
+        lblBluetoothStatus.Text = "Bluetooth: ...";
+        lblBluetoothStatus.TextAlign = ContentAlignment.MiddleRight;
+
         // Agregar controles al panel header
         panelHeader.Controls.Add(pictureBoxIcon);
         panelHeader.Controls.Add(lblTitle);
+        panelHeader.Controls.Add(pictureBoxBluetoothStatus);
+        panelHeader.Controls.Add(lblBluetoothStatus);
 
         // Agregar panel header al formulario
         Controls.Add(panelHeader);
@@ -103,13 +119,13 @@ partial class Main
         tabControlMain.Location = new Point(0, 60);
         tabControlMain.Size = new Size(900, 590);
         tabControlMain.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-        tabControlMain.BackColor = Color.SkyBlue; // Azul oscuro igual al panel header
+        tabControlMain.BackColor = Color.Blue; // Azul oscuro igual al panel header
 
         // Pestaña Mandos
         tabPageMandos = new TabPage();
         tabPageMandos.Text = "Mandos";
         tabPageMandos.BackColor = Color.White; // Azul oscuro
-        mandosControl = new MandosControl();
+        mandosControl = new MandosControl(_gamepadManager);
         mandosControl.Dock = DockStyle.Fill;
         tabPageMandos.Controls.Add(mandosControl);
 
@@ -168,6 +184,8 @@ partial class Main
     private Panel panelHeader;
     private PictureBox pictureBoxIcon;
     private Label lblTitle;
+    private PictureBox pictureBoxBluetoothStatus;
+    private Label lblBluetoothStatus;
     private TabControl tabControlMain;
     private TabPage tabPageMandos;
     private TabPage tabPageTester;
@@ -184,64 +202,4 @@ partial class Main
 
     #endregion
 
-    #region Windows API - Device Detection
-
-    /// <summary>
-    /// Constantes y estructuras de la API de Windows para detección de dispositivos
-    /// Estructura: Definiciones de la API de Windows para mensajes WM_DEVICECHANGE
-    /// Propósito: Permitir al formulario capturar eventos de conexión/desconexión de dispositivos
-    /// Componentes:
-    ///   - WM_DEVICECHANGE: Mensaje de Windows que indica cambios en dispositivos
-    ///   - DBT_DEVICEARRIVAL: Indica que un dispositivo se conectó
-    ///   - DBT_DEVICEREMOVECOMPLETE: Indica que un dispositivo se desconectó
-    ///   - DEV_BROADCAST_DEVICEINTERFACE: Estructura con información del dispositivo
-    /// Nota: Estas definiciones son necesarias para interceptar mensajes de Windows
-    /// </summary>
-
-    /// <summary>
-    /// Mensaje de Windows para cambios en dispositivos
-    /// </summary>
-    public const int WM_DEVICECHANGE = 0x0219;
-
-    /// <summary>
-    /// Dispositivo conectado
-    /// </summary>
-    public const int DBT_DEVICEARRIVAL = 0x8000;
-
-    /// <summary>
-    /// Dispositivo desconectado completamente
-    /// </summary>
-    public const int DBT_DEVICEREMOVECOMPLETE = 0x8004;
-
-    /// <summary>
-    /// Tipo de dispositivo: interfaz de dispositivo
-    /// </summary>
-    public const int DBT_DEVTYP_DEVICEINTERFACE = 0x00000005;
-
-    /// <summary>
-    /// Cabecera de información de broadcast de dispositivo
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential)]
-    public class DEV_BROADCAST_HDR
-    {
-        public int dbch_size;
-        public int dbch_devicetype;
-        public int dbch_reserved;
-    }
-
-    /// <summary>
-    /// Información detallada de la interfaz del dispositivo
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    public class DEV_BROADCAST_DEVICEINTERFACE
-    {
-        public int dbcc_size;
-        public int dbcc_devicetype;
-        public int dbcc_reserved;
-        public Guid dbcc_classguid;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 255)]
-        public string dbcc_name;
-    }
-
-    #endregion
 }

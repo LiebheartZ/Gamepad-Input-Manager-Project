@@ -1,5 +1,5 @@
-using System;
 using System.Windows.Forms;
+using GDMInputManager.Interfaces;
 using GDMInputManager.Services;
 
 namespace GDMInputManager;
@@ -14,11 +14,16 @@ namespace GDMInputManager;
 ///   - UserControls: Cada pestaña tiene su propio UserControl independiente
 /// Características:
 ///   - Icono personalizado en la barra de tareas
-///   - Detección de dispositivos en tiempo real (WM_DEVICECHANGE)
 ///   - Logging automático al iniciar
 /// </summary>
 public partial class Main : Form
 {
+    private readonly IGamepadManager _gamepadManager = GamepadCompositionRoot.CreateDefault();
+    private readonly WindowsBluetoothRadioStatusService _bluetoothRadioStatusService = new();
+    private readonly ToolTip _bluetoothStatusToolTip = new();
+    private System.Windows.Forms.Timer? _bluetoothStatusTimer;
+    private bool _isBluetoothStatusRefreshInProgress;
+
     /// <summary>
     /// Constructor del formulario principal
     /// Estructura: Inicializa componentes, configura icono y registra log inicial
@@ -34,7 +39,20 @@ public partial class Main : Form
         try
         {
             InitializeComponent();
-            this.Icon = new Icon("Resources\\icono.ico");
+            _bluetoothStatusToolTip.SetToolTip(pictureBoxBluetoothStatus, "Consultando Bluetooth...");
+            _bluetoothStatusToolTip.SetToolTip(lblBluetoothStatus, "Consultando Bluetooth...");
+            pictureBoxBluetoothStatus.Paint += PictureBoxBluetoothStatus_Paint;
+            Load += Main_Load;
+            FormClosed += Main_FormClosed;
+            _bluetoothStatusTimer = new System.Windows.Forms.Timer { Interval = 3000 };
+            components?.Add(_bluetoothStatusTimer);
+            _bluetoothStatusTimer.Tick += BluetoothStatusTimer_Tick;
+            string iconPath = Path.Combine(AppContext.BaseDirectory, "Resources", "icono.ico");
+            if (File.Exists(iconPath))
+            {
+                Icon = new Icon(iconPath);
+            }
+
             LoggerService.Instance.Success("Aplicación GDM Input Manager iniciada correctamente.");
         }
         catch (Exception ex)
@@ -44,65 +62,97 @@ public partial class Main : Form
         }
     }
 
-    /// <summary>
-    /// Override del método WndProc para capturar mensajes de Windows
-    /// Estructura: Intercepta mensajes de Windows antes de procesarlos normalmente
-    /// Propósito: Detectar cuando se conectan o desconectan dispositivos en tiempo real
-    /// Proceso:
-    ///   1. Llama a base.WndProc para procesamiento normal
-    ///   2. Verifica si el mensaje es WM_DEVICECHANGE
-    ///   3. Si es DBT_DEVICEARRIVAL, llama a OnDeviceConnected
-    ///   4. Si es DBT_DEVICEREMOVECOMPLETE, llama a OnDeviceDisconnected
-    /// Parámetros:
-    ///   - m: Mensaje de Windows (contiene código de mensaje y parámetros)
-    /// Nota: WM_DEVICECHANGE es un mensaje de Windows que indica cambios en dispositivos
-    /// </summary>
-    protected override void WndProc(ref Message m)
+    private async void Main_Load(object? sender, EventArgs e)
     {
-        base.WndProc(ref m);
+        await RefreshBluetoothStatusAsync();
+        _bluetoothStatusTimer?.Start();
+    }
 
-        if (m.Msg == WM_DEVICECHANGE)
+    private async void BluetoothStatusTimer_Tick(object? sender, EventArgs e)
+    {
+        await RefreshBluetoothStatusAsync();
+    }
+
+    private async Task RefreshBluetoothStatusAsync()
+    {
+        if (_isBluetoothStatusRefreshInProgress || IsDisposed)
         {
-            if (m.WParam.ToInt32() == DBT_DEVICEARRIVAL)
+            return;
+        }
+
+        _isBluetoothStatusRefreshInProgress = true;
+        try
+        {
+            BluetoothRadioStatus status = await _bluetoothRadioStatusService.GetStatusAsync();
+            if (IsDisposed)
             {
-                // Dispositivo conectado
-                OnDeviceConnected();
+                return;
             }
-            else if (m.WParam.ToInt32() == DBT_DEVICEREMOVECOMPLETE)
+
+            lblBluetoothStatus.Text = status.Availability switch
             {
-                // Dispositivo desconectado
-                OnDeviceDisconnected();
-            }
+                BluetoothRadioAvailability.On => "Bluetooth: Activo",
+                BluetoothRadioAvailability.Off => "Bluetooth: Apagado",
+                BluetoothRadioAvailability.Unavailable => "Bluetooth: No disponible",
+                _ => "Bluetooth: Desconocido"
+            };
+            lblBluetoothStatus.AccessibleDescription = status.Detail;
+            pictureBoxBluetoothStatus.AccessibleDescription = status.Detail;
+            _bluetoothStatusToolTip.SetToolTip(lblBluetoothStatus, status.Detail);
+            _bluetoothStatusToolTip.SetToolTip(pictureBoxBluetoothStatus, status.Detail);
+            pictureBoxBluetoothStatus.Invalidate();
+        }
+        catch (Exception ex)
+        {
+            LoggerService.Instance.Error($"No se pudo actualizar el indicador Bluetooth: {ex}");
+            lblBluetoothStatus.Text = "Bluetooth: Desconocido";
+            lblBluetoothStatus.AccessibleDescription = ex.Message;
+            pictureBoxBluetoothStatus.AccessibleDescription = ex.Message;
+            pictureBoxBluetoothStatus.Invalidate();
+        }
+        finally
+        {
+            _isBluetoothStatusRefreshInProgress = false;
         }
     }
 
-    /// <summary>
-    /// Manejador cuando se detecta un dispositivo conectado
-    /// Estructura: Método que se llama cuando Windows detecta un nuevo dispositivo
-    /// Propósito: Notificar a MandosControl que un dispositivo se conectó
-    /// Estado actual: Implementación parcial, solo registra log
-    /// Pendiente: Conectar con MandosControl para refrescar la lista automáticamente
-    /// </summary>
-    private void OnDeviceConnected()
+    private void PictureBoxBluetoothStatus_Paint(object? sender, PaintEventArgs e)
     {
-        LoggerService.Instance.Info("Dispositivo conectado detectado por WM_DEVICECHANGE.");
-        // Notificar a MandosControl que un dispositivo se conectó
-        // MandosControl.RefreshGamepadList();
-        // Por ahora, esto se implementará cuando conectemos el control
+        Color color = lblBluetoothStatus.Text switch
+        {
+            "Bluetooth: Activo" => Color.LightGreen,
+            "Bluetooth: Apagado" => Color.Salmon,
+            "Bluetooth: No disponible" => Color.DarkGray,
+            _ => Color.Gold
+        };
+        using var pen = new Pen(color, 2.5F)
+        {
+            StartCap = System.Drawing.Drawing2D.LineCap.Round,
+            EndCap = System.Drawing.Drawing2D.LineCap.Round,
+            LineJoin = System.Drawing.Drawing2D.LineJoin.Round
+        };
+
+        float centerX = e.ClipRectangle.Left + e.ClipRectangle.Width / 2F;
+        float top = e.ClipRectangle.Top + 4F;
+        float bottom = e.ClipRectangle.Bottom - 4F;
+        float middle = (top + bottom) / 2F;
+        float right = centerX + 8F;
+        float left = centerX - 8F;
+
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        e.Graphics.DrawLine(pen, centerX, top, centerX, bottom);
+        e.Graphics.DrawLine(pen, centerX, top, right, middle - 1F);
+        e.Graphics.DrawLine(pen, right, middle - 1F, centerX, middle);
+        e.Graphics.DrawLine(pen, centerX, middle, right, middle + 1F);
+        e.Graphics.DrawLine(pen, right, middle + 1F, centerX, bottom);
+        e.Graphics.DrawLine(pen, left, middle - 7F, centerX, middle);
+        e.Graphics.DrawLine(pen, centerX, middle, left, middle + 7F);
     }
 
-    /// <summary>
-    /// Manejador cuando se detecta un dispositivo desconectado
-    /// Estructura: Método que se llama cuando Windows detecta desconexión de dispositivo
-    /// Propósito: Notificar a MandosControl que un dispositivo se desconectó
-    /// Estado actual: Implementación parcial, solo registra log
-    /// Pendiente: Conectar con MandosControl para refrescar la lista automáticamente
-    /// </summary>
-    private void OnDeviceDisconnected()
+    private void Main_FormClosed(object? sender, FormClosedEventArgs e)
     {
-        LoggerService.Instance.Info("Dispositivo desconectado detectado por WM_DEVICECHANGE.");
-        // Notificar a MandosControl que un dispositivo se desconectó
-        // MandosControl.RefreshGamepadList();
-        // Por ahora, esto se implementará cuando conectemos el control
+        _bluetoothStatusTimer?.Stop();
+        _bluetoothStatusToolTip.Dispose();
+        _gamepadManager.Dispose();
     }
 }
