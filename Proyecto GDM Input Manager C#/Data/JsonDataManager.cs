@@ -9,12 +9,12 @@ namespace GDMInputManager.Data;
 /// Estructura: Clase que proporciona operaciones de lectura/escritura de archivos JSON
 /// Propósito: Centralizar todas las operaciones de persistencia de datos en formato JSON
 /// Estrategia de almacenamiento:
-///   - Directorio "Data" en la carpeta del ejecutable
+///   - Directorio "Data" en LocalAppData del usuario
 ///   - Cada archivo es un JSON con formato legible (indentado)
 /// Ventajas:
 ///   - Fácil de leer/editar manualmente (formato JSON)
 ///   - Sin dependencias de base de datos externas
-///   - Portátil (los datos viajan con el ejecutable)
+///   - Los datos permanecen disponibles entre versiones y no requieren permisos de escritura en la carpeta de instalación
 /// </summary>
 public class JsonDataManager
 {
@@ -22,23 +22,32 @@ public class JsonDataManager
     private readonly string _dataDirectory;
 
     /// <summary>
+    /// Número de archivos de mandos copiados desde la ubicación anterior.
+    /// Los archivos de origen se conservan y los existentes no se sobrescriben.
+    /// </summary>
+    public int MigratedGamepadFiles { get; }
+
+    /// <summary>
     /// Constructor del gestor de datos
-    /// Estructura: Crea el directorio "Data" junto al ejecutable si no existe
+    /// Estructura: Crea el directorio de datos en LocalAppData si no existe
     /// Propósito: Preparar el directorio de almacenamiento para uso inmediato
     /// Proceso:
-    ///   1. Obtiene la ruta base donde está el ejecutable
-    ///   2. Combina con "Data" para crear la ruta del directorio de datos
-    ///   3. Si el directorio no existe, lo crea
-    /// Nota: BaseDirectory apunta a la carpeta donde está el .exe (bin/Debug/net10.0-windows/)
+    ///   1. Obtiene la carpeta LocalAppData del usuario
+    ///   2. Crea el directorio de datos de la aplicación
+    ///   3. Copia los JSON de mandos de la ubicación anterior si aún no existen en el destino
     /// </summary>
     public JsonDataManager()
     {
-        // Crear directorio de datos en la carpeta del ejecutable
-        _dataDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
-        if (!Directory.Exists(_dataDirectory))
+        string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(localAppData))
         {
-            Directory.CreateDirectory(_dataDirectory);
+            throw new InvalidOperationException("No se pudo determinar la carpeta LocalAppData del usuario.");
         }
+
+        _dataDirectory = Path.Combine(localAppData, "GDMInputManager", "Data");
+        Directory.CreateDirectory(_dataDirectory);
+        MigratedGamepadFiles = MigrateLegacyGamepads(
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data"));
     }
 
     /// <summary>
@@ -46,7 +55,7 @@ public class JsonDataManager
     /// Estructura: Serializa el objeto a JSON y lo escribe en un archivo
     /// Propósito: Persistir cualquier objeto C# en formato JSON
     /// Proceso:
-    ///   1. Combina el nombre del archivo con el directorio de datos
+    ///   1. Combina la ruta relativa del archivo con el directorio de datos
     ///   2. Serializa el objeto a JSON con formato indentado (legible)
     ///   3. Escribe el JSON en el archivo (sobrescribe si existe)
     /// Parámetros:
@@ -57,6 +66,12 @@ public class JsonDataManager
     public void SaveToFile<T>(string fileName, T data)
     {
         string filePath = Path.Combine(_dataDirectory, fileName);
+        string? directory = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
         string json = JsonSerializer.Serialize(data, new JsonSerializerOptions
         {
             WriteIndented = true
@@ -73,7 +88,7 @@ public class JsonDataManager
     ///   2. Si el archivo no existe, retorna el valor por defecto
     ///   3. Lee el contenido del archivo JSON
     ///   4. Deserializa el JSON al tipo especificado
-    ///   5. Si la deserialización falla, retorna el valor por defecto
+    ///   5. Si el JSON es nulo, retorna el valor por defecto; los errores de lectura o deserialización se propagan
     /// Parámetros:
     ///   - fileName: Nombre del archivo a leer
     ///   - defaultValue: Valor a retornar si el archivo no existe o hay error
@@ -141,5 +156,43 @@ public class JsonDataManager
     public string GetDataDirectory()
     {
         return _dataDirectory;
+    }
+
+    private int MigrateLegacyGamepads(string legacyDataDirectory)
+    {
+        if (!Directory.Exists(legacyDataDirectory))
+        {
+            return 0;
+        }
+
+        string destinationDirectory = Path.Combine(_dataDirectory, "Gamepads");
+        Directory.CreateDirectory(destinationDirectory);
+
+        int copiedFiles = 0;
+        string[] sourceDirectories =
+        {
+            legacyDataDirectory,
+            Path.Combine(legacyDataDirectory, "Gamepads")
+        };
+
+        foreach (string sourceDirectory in sourceDirectories)
+        {
+            if (!Directory.Exists(sourceDirectory))
+            {
+                continue;
+            }
+
+            foreach (string sourcePath in Directory.EnumerateFiles(sourceDirectory, "mando_*.json"))
+            {
+                string destinationPath = Path.Combine(destinationDirectory, Path.GetFileName(sourcePath));
+                if (!File.Exists(destinationPath))
+                {
+                    File.Copy(sourcePath, destinationPath);
+                    copiedFiles++;
+                }
+            }
+        }
+
+        return copiedFiles;
     }
 }

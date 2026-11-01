@@ -13,6 +13,8 @@ public class SDL2GamepadDetector : IGamepadDetector
 {
     // Campo privado para rastrear si SDL2 fue inicializado correctamente
     private bool _isInitialized = false;
+    private readonly WindowsBluetoothConnectionService _bluetoothConnectionService = new();
+    private readonly WindowsUsbConnectionService _usbConnectionService = new();
 
     /// <summary>
     /// Nombre del detector
@@ -39,15 +41,16 @@ public class SDL2GamepadDetector : IGamepadDetector
             // SDL_INIT_GAMECONTROLLER: Detección de gamepads modernos con mapeo
             if (SDL.SDL_Init(SDL.SDL_INIT_JOYSTICK | SDL.SDL_INIT_GAMECONTROLLER) < 0)
             {
+                LoggerService.Instance.Error("SDL2 no pudo inicializar los subsistemas de joystick y gamecontroller.");
                 return false;
             }
 
             _isInitialized = true;
             return true;
         }
-        catch
+        catch (Exception ex)
         {
-            // Si ocurre una excepción, la inicialización falló
+            LoggerService.Instance.Error($"Excepción al inicializar SDL2: {ex.Message}");
             return false;
         }
     }
@@ -78,6 +81,32 @@ public class SDL2GamepadDetector : IGamepadDetector
 
         try
         {
+            List<string> bluetoothDeviceNames;
+            HashSet<(int Vid, int Pid)> connectedUsbGamepadIds;
+            bool bluetoothStateAvailable = true;
+            try
+            {
+                bluetoothDeviceNames = _bluetoothConnectionService.GetConnectedDeviceNames();
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Instance.Error($"No se pudo consultar el estado Bluetooth de Windows: {ex.Message}");
+                bluetoothDeviceNames = new List<string>();
+                bluetoothStateAvailable = false;
+            }
+
+            try
+            {
+                connectedUsbGamepadIds = _usbConnectionService.GetConnectedUsbGamepadIds();
+            }
+            catch (Exception ex)
+            {
+                LoggerService.Instance.Error($"No se pudo consultar el bus USB de Windows: {ex.Message}");
+                connectedUsbGamepadIds = new HashSet<(int Vid, int Pid)>();
+            }
+
+            SDL.SDL_PumpEvents();
+
             // Obtener número de joysticks conectados al sistema
             int numJoysticks = SDL.SDL_NumJoysticks();
 
@@ -97,6 +126,21 @@ public class SDL2GamepadDetector : IGamepadDetector
                     var gamepad = CreateGamepadFromSDL(joystickPtr, i);
                     if (gamepad != null)
                     {
+                        bool isConnectedByUsb = IsConnectedByUsb(gamepad, connectedUsbGamepadIds);
+                        bool isConnectedByBluetooth = IsConnectedByBluetooth(gamepad, gamepads, bluetoothDeviceNames);
+
+                        if (bluetoothStateAvailable &&
+                            RequiresWindowsBluetoothState(gamepad) &&
+                            !isConnectedByUsb &&
+                            !isConnectedByBluetooth)
+                        {
+                            continue;
+                        }
+
+                        gamepad.ConnectionType = ResolveConnectionType(
+                            gamepad,
+                            isConnectedByBluetooth,
+                            isConnectedByUsb);
                         gamepads.Add(gamepad);
                     }
                 }
@@ -107,9 +151,9 @@ public class SDL2GamepadDetector : IGamepadDetector
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Error al obtener mandos, retornar lista vacía
+            LoggerService.Instance.Error($"Error al enumerar mandos mediante SDL2: {ex.Message}");
         }
 
         return gamepads;
@@ -175,7 +219,7 @@ public class SDL2GamepadDetector : IGamepadDetector
     ///   3. Obtiene el nombre del joystick
     ///   4. Identifica el tipo de mando usando los VID/PID
     ///   5. Obtiene el nombre del modelo específico
-    ///   6. Asume conexión USB por defecto (SDL2 no distingue USB/Bluetooth claramente)
+    ///   6. Marca la conexión como desconocida porque SDL2 no informa el transporte en esta detección
     /// Parámetros:
     ///   - joystickPtr: Puntero al joystick SDL2
     ///   - deviceIndex: Índice del dispositivo en SDL2
@@ -199,15 +243,108 @@ public class SDL2GamepadDetector : IGamepadDetector
                 Pid = pid,
                 Type = IdentifyGamepadType(vid, pid),
                 ModelName = GetModelName(vid, pid),
-                ConnectionType = ConnectionType.USB // SDL2 reporta USB por defecto
+                ConnectionType = ConnectionType.Unknown
             };
 
             return gamepad;
         }
-        catch
+
+        catch (Exception ex)
         {
+            LoggerService.Instance.Error($"Error al leer el mando SDL2 del índice {deviceIndex}: {ex.Message}");
             return null;
         }
+    }
+
+    private static ConnectionType ResolveConnectionType(
+        Gamepad gamepad,
+        bool isConnectedByBluetooth,
+        bool isConnectedByUsb)
+    {
+        if (isConnectedByUsb)
+        {
+            return ConnectionType.USB;
+        }
+
+        if (isConnectedByBluetooth && IsXboxBluetoothFamily(gamepad.Type))
+        {
+            return ConnectionType.Bluetooth;
+        }
+
+        if (isConnectedByBluetooth)
+        {
+            return ConnectionType.Bluetooth;
+        }
+
+        return ConnectionType.Unknown;
+    }
+
+    private static bool IsConnectedByUsb(
+        Gamepad gamepad,
+        IReadOnlySet<(int Vid, int Pid)> connectedUsbGamepadIds)
+    {
+        return gamepad.Vid.HasValue &&
+               gamepad.Pid.HasValue &&
+               connectedUsbGamepadIds.Contains((gamepad.Vid.Value, gamepad.Pid.Value));
+    }
+
+    private static bool IsConnectedByBluetooth(
+        Gamepad gamepad,
+        IReadOnlyCollection<Gamepad> previouslyDetected,
+        IReadOnlyCollection<string> connectedBluetoothDeviceNames)
+    {
+        string deviceKey = GetBluetoothDeviceKey(gamepad.Name, gamepad.Type);
+        if (string.IsNullOrEmpty(deviceKey))
+        {
+            return false;
+        }
+
+        int matchingBluetoothDevices = connectedBluetoothDeviceNames.Count(
+            name => GetBluetoothDeviceKey(name, GamepadType.Unknown) == deviceKey);
+        int matchingGamepads = previouslyDetected.Count(
+            detected => GetBluetoothDeviceKey(detected.Name, detected.Type) == deviceKey) + 1;
+
+        if (matchingBluetoothDevices == matchingGamepads)
+        {
+            return true;
+        }
+
+        return matchingBluetoothDevices == 1 &&
+               deviceKey is "DUALSHOCK4" or "XBOXCONTROLLER";
+    }
+
+    private static bool IsDualShock4(Gamepad gamepad)
+    {
+        return GetBluetoothDeviceKey(gamepad.Name, gamepad.Type) == "DUALSHOCK4";
+    }
+
+    private static bool IsXboxBluetoothFamily(GamepadType gamepadType)
+    {
+        return gamepadType is GamepadType.XboxOne or GamepadType.XboxSeries;
+    }
+
+    private static bool RequiresWindowsBluetoothState(Gamepad gamepad)
+    {
+        return IsDualShock4(gamepad) || IsXboxBluetoothFamily(gamepad.Type);
+    }
+
+    private static string GetBluetoothDeviceKey(string name, GamepadType gamepadType)
+    {
+        string normalizedName = new(name.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray());
+        if (gamepadType == GamepadType.PlayStationDualShock4 ||
+            normalizedName is "PS4CONTROLLER" or "WIRELESSCONTROLLER" or "DUALSHOCK4WIRELESSCONTROLLER")
+        {
+            return "DUALSHOCK4";
+        }
+
+        if (IsXboxBluetoothFamily(gamepadType) ||
+            normalizedName is "XBOXWIRELESSCONTROLLER" or "XBOXONECONTROLLER" or
+                "XBOXSERIESXCONTROLLER" or "XBOXSERIESSCONTROLLER" or "XBOXCONTROLLER")
+        {
+            return "XBOXCONTROLLER";
+        }
+
+        return normalizedName;
     }
 
     /// <summary>

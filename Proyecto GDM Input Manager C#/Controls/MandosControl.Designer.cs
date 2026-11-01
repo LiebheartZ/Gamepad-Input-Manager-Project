@@ -1,130 +1,155 @@
 namespace GDMInputManager.Controls;
 
-/// <summary>
-/// Archivo de diseñador para MandosControl (generado automáticamente)
-/// Estructura: Contiene el código de inicialización de la UI (generado por el diseñador)
-/// Propósito: Configurar todos los controles visuales del UserControl
-/// Nota: Este archivo no debe editarse manualmente en un entorno de diseño normal
-/// Componentes:
-///   - listViewGamepads: ListView para mostrar la lista de mandos
-///   - buttonRefresh: Botón para actualizar la lista
-///   - buttonPair: Botón para emparejar mandos
-///   - buttonUnpair: Botón para desemparejar mandos
-/// </summary>
 partial class MandosControl
 {
     private System.ComponentModel.IContainer components = null;
 
-    /// <summary>
-    /// Limpia recursos usados por el control
-    /// </summary>
     protected override void Dispose(bool disposing)
     {
-        if (disposing && (components != null))
+        if (disposing)
         {
-            components.Dispose();
+            components?.Dispose();
         }
+
         base.Dispose(disposing);
     }
 
-    /// <summary>
-    /// Inicializa todos los componentes visuales del control
-    /// Estructura: Código generado automáticamente por el diseñador de Windows Forms
-    /// Propósito: Crear y configurar todos los controles del UserControl
-    /// </summary>
     private void InitializeComponent()
     {
-        this.listViewGamepads = new System.Windows.Forms.ListView();
-        this.columnHeaderName = new System.Windows.Forms.ColumnHeader();
-        this.columnHeaderType = new System.Windows.Forms.ColumnHeader();
-        this.columnHeaderConnection = new System.Windows.Forms.ColumnHeader();
-        this.columnHeaderStatus = new System.Windows.Forms.ColumnHeader();
-        this.buttonRefresh = new System.Windows.Forms.Button();
-        this.buttonPair = new System.Windows.Forms.Button();
-        this.buttonUnpair = new System.Windows.Forms.Button();
-        this.SuspendLayout();
+        components = new System.ComponentModel.Container();
+        checkAutoPair = new CheckBox();
+        checkShowAllBluetooth = new CheckBox();
+        buttonGameControllers = new Button();
+        buttonSearchBluetooth = new Button();
+        buttonRefreshGamepads = new Button();
+        labelDevices = new Label();
+        labelBluetoothSearchStatus = new Label();
+        panelGamepadList = new Panel();
+        flowLayoutPanelGamepads = new FlowLayoutPanel();
+        panelGamepadList.SuspendLayout();
+        SuspendLayout();
         //
-        // listViewGamepads
+        // checkAutoPair
         //
-        this.listViewGamepads.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
-            this.columnHeaderName,
-            this.columnHeaderType,
-            this.columnHeaderConnection,
-            this.columnHeaderStatus});
-        this.listViewGamepads.Location = new System.Drawing.Point(10, 10);
-        this.listViewGamepads.Name = "listViewGamepads";
-        this.listViewGamepads.Size = new System.Drawing.Size(860, 450);
-        this.listViewGamepads.TabIndex = 0;
-        this.listViewGamepads.UseCompatibleStateImageBehavior = false;
-        this.listViewGamepads.View = System.Windows.Forms.View.Details;
+        checkAutoPair.AutoSize = true;
+        checkAutoPair.Location = new Point(14, 14);
+        checkAutoPair.Name = "checkAutoPair";
+        checkAutoPair.Size = new Size(288, 19);
+        checkAutoPair.TabIndex = 0;
+        checkAutoPair.Text = "Emparejar mandos automáticamente al detectarlos";
+        checkAutoPair.UseVisualStyleBackColor = true;
         //
-        // columnHeaderName
+        // checkShowAllBluetooth
         //
-        this.columnHeaderName.Text = "Nombre";
-        this.columnHeaderName.Width = 250;
+        checkShowAllBluetooth.AutoSize = true;
+        checkShowAllBluetooth.Location = new Point(14, 42);
+        checkShowAllBluetooth.Name = "checkShowAllBluetooth";
+        checkShowAllBluetooth.Size = new Size(240, 19);
+        checkShowAllBluetooth.TabIndex = 1;
+        checkShowAllBluetooth.Text = "Mostrar dispositivos Bluetooth disponibles";
+        checkShowAllBluetooth.UseVisualStyleBackColor = true;
         //
-        // columnHeaderType
+        // buttonGameControllers
         //
-        this.columnHeaderType.Text = "Tipo";
-        this.columnHeaderType.Width = 150;
+        buttonGameControllers.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        buttonGameControllers.Location = new Point(380, 14);
+        buttonGameControllers.Name = "buttonGameControllers";
+        buttonGameControllers.Size = new Size(170, 36);
+        buttonGameControllers.TabIndex = 2;
+        buttonGameControllers.Text = "Dispositivos de juego";
+        buttonGameControllers.UseVisualStyleBackColor = true;
+        buttonGameControllers.Click += buttonGameControllers_Click;
         //
-        // columnHeaderConnection
+        // buttonSearchBluetooth
         //
-        this.columnHeaderConnection.Text = "Conexión";
-        this.columnHeaderConnection.Width = 120;
+        buttonSearchBluetooth.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        buttonSearchBluetooth.Location = new Point(562, 14);
+        buttonSearchBluetooth.Name = "buttonSearchBluetooth";
+        buttonSearchBluetooth.Size = new Size(170, 36);
+        buttonSearchBluetooth.TabIndex = 3;
+        buttonSearchBluetooth.Text = "Buscar dispositivos";
+        buttonSearchBluetooth.UseVisualStyleBackColor = true;
+        buttonSearchBluetooth.Click += buttonSearchBluetooth_Click;
         //
-        // columnHeaderStatus
+        // labelDevices
         //
-        this.columnHeaderStatus.Text = "Estado";
-        this.columnHeaderStatus.Width = 100;
+        labelDevices.AutoSize = true;
+        labelDevices.Location = new Point(14, 82);
+        labelDevices.Name = "labelDevices";
+        labelDevices.Size = new Size(133, 15);
+        labelDevices.TabIndex = 4;
+        labelDevices.Text = "Lista de mandos";
         //
-        // buttonRefresh
+        // buttonRefreshGamepads
         //
-        this.buttonRefresh.Location = new System.Drawing.Point(10, 470);
-        this.buttonRefresh.Name = "buttonRefresh";
-        this.buttonRefresh.Size = new System.Drawing.Size(100, 30);
-        this.buttonRefresh.TabIndex = 1;
-        this.buttonRefresh.Text = "Actualizar";
-        this.buttonRefresh.UseVisualStyleBackColor = true;
-        this.buttonRefresh.Click += new System.EventHandler(this.buttonRefresh_Click);
+        buttonRefreshGamepads.Location = new Point(156, 76);
+        buttonRefreshGamepads.Name = "buttonRefreshGamepads";
+        buttonRefreshGamepads.Size = new Size(92, 24);
+        buttonRefreshGamepads.TabIndex = 5;
+        buttonRefreshGamepads.Text = "Actualizar";
+        buttonRefreshGamepads.UseVisualStyleBackColor = true;
+        buttonRefreshGamepads.Click += buttonRefreshGamepads_Click;
         //
-        // buttonPair
+        // labelBluetoothSearchStatus
         //
-        this.buttonPair.Location = new System.Drawing.Point(120, 470);
-        this.buttonPair.Name = "buttonPair";
-        this.buttonPair.Size = new System.Drawing.Size(100, 30);
-        this.buttonPair.TabIndex = 2;
-        this.buttonPair.Text = "Emparejar";
-        this.buttonPair.UseVisualStyleBackColor = true;
-        this.buttonPair.Click += new System.EventHandler(this.buttonPair_Click);
+        labelBluetoothSearchStatus.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        labelBluetoothSearchStatus.Location = new Point(360, 78);
+        labelBluetoothSearchStatus.Name = "labelBluetoothSearchStatus";
+        labelBluetoothSearchStatus.Size = new Size(372, 22);
+        labelBluetoothSearchStatus.TabIndex = 6;
+        labelBluetoothSearchStatus.TextAlign = ContentAlignment.MiddleRight;
         //
-        // buttonUnpair
+        // panelGamepadList
         //
-        this.buttonUnpair.Location = new System.Drawing.Point(230, 470);
-        this.buttonUnpair.Name = "buttonUnpair";
-        this.buttonUnpair.Size = new System.Drawing.Size(100, 30);
-        this.buttonUnpair.TabIndex = 3;
-        this.buttonUnpair.Text = "Desemparejar";
-        this.buttonUnpair.UseVisualStyleBackColor = true;
-        this.buttonUnpair.Click += new System.EventHandler(this.buttonUnpair_Click);
+        panelGamepadList.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+        panelGamepadList.BackColor = Color.FromArgb(220, 235, 249);
+        panelGamepadList.BorderStyle = BorderStyle.FixedSingle;
+        panelGamepadList.Controls.Add(flowLayoutPanelGamepads);
+        panelGamepadList.Location = new Point(10, 104);
+        panelGamepadList.Name = "panelGamepadList";
+        panelGamepadList.Padding = new Padding(7);
+        panelGamepadList.Size = new Size(722, 326);
+        panelGamepadList.TabIndex = 7;
+        //
+        // flowLayoutPanelGamepads
+        //
+        flowLayoutPanelGamepads.AutoScroll = true;
+        flowLayoutPanelGamepads.Dock = DockStyle.Fill;
+        flowLayoutPanelGamepads.FlowDirection = FlowDirection.TopDown;
+        flowLayoutPanelGamepads.Location = new Point(7, 7);
+        flowLayoutPanelGamepads.Name = "flowLayoutPanelGamepads";
+        flowLayoutPanelGamepads.Padding = new Padding(4);
+        flowLayoutPanelGamepads.Size = new Size(706, 310);
+        flowLayoutPanelGamepads.TabIndex = 0;
+        flowLayoutPanelGamepads.WrapContents = false;
+        flowLayoutPanelGamepads.SizeChanged += flowLayoutPanelGamepads_SizeChanged;
         //
         // MandosControl
         //
-        this.Controls.Add(this.buttonUnpair);
-        this.Controls.Add(this.buttonPair);
-        this.Controls.Add(this.buttonRefresh);
-        this.Controls.Add(this.listViewGamepads);
-        this.Name = "MandosControl";
-        this.Size = new System.Drawing.Size(880, 550);
-        this.ResumeLayout(false);
+        AutoScaleDimensions = new SizeF(7F, 15F);
+        AutoScaleMode = AutoScaleMode.Font;
+        Controls.Add(panelGamepadList);
+        Controls.Add(labelBluetoothSearchStatus);
+        Controls.Add(buttonRefreshGamepads);
+        Controls.Add(labelDevices);
+        Controls.Add(buttonSearchBluetooth);
+        Controls.Add(buttonGameControllers);
+        Controls.Add(checkShowAllBluetooth);
+        Controls.Add(checkAutoPair);
+        Name = "MandosControl";
+        Size = new Size(742, 440);
+        panelGamepadList.ResumeLayout(false);
+        ResumeLayout(false);
+        PerformLayout();
     }
 
-    private System.Windows.Forms.ListView listViewGamepads;
-    private System.Windows.Forms.ColumnHeader columnHeaderName;
-    private System.Windows.Forms.ColumnHeader columnHeaderType;
-    private System.Windows.Forms.ColumnHeader columnHeaderConnection;
-    private System.Windows.Forms.ColumnHeader columnHeaderStatus;
-    private System.Windows.Forms.Button buttonRefresh;
-    private System.Windows.Forms.Button buttonPair;
-    private System.Windows.Forms.Button buttonUnpair;
+    private CheckBox checkAutoPair;
+    private CheckBox checkShowAllBluetooth;
+    private Button buttonGameControllers;
+    private Button buttonSearchBluetooth;
+    private Button buttonRefreshGamepads;
+    private Label labelDevices;
+    private Label labelBluetoothSearchStatus;
+    private Panel panelGamepadList;
+    private FlowLayoutPanel flowLayoutPanelGamepads;
 }

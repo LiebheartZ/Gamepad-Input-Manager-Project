@@ -23,6 +23,12 @@ public class GamepadDatabaseService
     // Ruta del directorio donde se guardan los archivos de mandos
     private readonly string _gamepadsDirectory;
 
+    private readonly HashSet<string> _reportedReadErrors = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _deletedGamepadKeys;
+    private const string DeletedGamepadsFileName = "Gamepads\\deleted_gamepads.json";
+
+    public event Action<string>? DataReadError;
+
     /// <summary>
     /// Constructor del servicio
     /// Estructura: Inicializa el JsonDataManager y crea el directorio de mandos si no existe
@@ -43,6 +49,10 @@ public class GamepadDatabaseService
         {
             Directory.CreateDirectory(_gamepadsDirectory);
         }
+
+        _deletedGamepadKeys = new HashSet<string>(
+            _dataManager.LoadFromFile<List<string>>(DeletedGamepadsFileName, new List<string>()),
+            StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -59,13 +69,18 @@ public class GamepadDatabaseService
     /// </summary>
     public void SaveGamepad(Gamepad gamepad)
     {
+        if (IsGamepadDeleted(gamepad))
+        {
+            LoggerService.Instance.Warning($"Se omitió guardar '{gamepad.Name}' porque fue borrado de la lista de la aplicación.");
+            return;
+        }
+
         string fileName = $"mando_{gamepad.Id}.json";
-        string filePath = Path.Combine(_gamepadsDirectory, fileName);
 
         // Actualizar fecha de último uso para saber cuándo se usó el mando por última vez
         gamepad.LastUsed = DateTime.Now;
 
-        _dataManager.SaveToFile(fileName, gamepad);
+        _dataManager.SaveToFile(Path.Combine("Gamepads", fileName), gamepad);
     }
 
     /// <summary>
@@ -83,7 +98,7 @@ public class GamepadDatabaseService
     public Gamepad? LoadGamepad(string id)
     {
         string fileName = $"mando_{id}.json";
-        return _dataManager.LoadFromFile<Gamepad>(fileName);
+        return _dataManager.LoadFromFile<Gamepad>(Path.Combine("Gamepads", fileName));
     }
 
     /// <summary>
@@ -118,7 +133,7 @@ public class GamepadDatabaseService
         {
             try
             {
-                var gamepad = _dataManager.LoadFromFile<Gamepad>(Path.GetFileName(file));
+                var gamepad = _dataManager.LoadFromFile<Gamepad>(Path.Combine("Gamepads", Path.GetFileName(file)));
                 if (gamepad != null)
                 {
                     // Verificar por VID/PID (para mandos USB)
@@ -136,9 +151,9 @@ public class GamepadDatabaseService
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Error al leer archivo, continuar con el siguiente
+                ReportReadError(file, ex);
             }
         }
 
@@ -173,15 +188,15 @@ public class GamepadDatabaseService
         {
             try
             {
-                var gamepad = _dataManager.LoadFromFile<Gamepad>(Path.GetFileName(file));
+                var gamepad = _dataManager.LoadFromFile<Gamepad>(Path.Combine("Gamepads", Path.GetFileName(file)));
                 if (gamepad != null)
                 {
                     gamepads.Add(gamepad);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Error al leer archivo, continuar con el siguiente
+                ReportReadError(file, ex);
             }
         }
 
@@ -202,7 +217,46 @@ public class GamepadDatabaseService
     public void DeleteGamepad(string id)
     {
         string fileName = $"mando_{id}.json";
-        _dataManager.DeleteFile(fileName);
+        _dataManager.DeleteFile(Path.Combine("Gamepads", fileName));
+    }
+
+    public void DeleteGamepad(Gamepad gamepad, string? bluetoothAddress = null)
+    {
+        _deletedGamepadKeys.Add(GetGamepadDeletionKey(gamepad, bluetoothAddress));
+        _dataManager.SaveToFile(DeletedGamepadsFileName, _deletedGamepadKeys.ToList());
+        DeleteGamepad(gamepad.Id);
+    }
+
+    public bool IsGamepadDeleted(Gamepad gamepad, string? bluetoothAddress = null)
+    {
+        return _deletedGamepadKeys.Contains(GetGamepadDeletionKey(gamepad, bluetoothAddress));
+    }
+
+    private static string GetGamepadDeletionKey(Gamepad gamepad, string? bluetoothAddress)
+    {
+        string? address = !string.IsNullOrWhiteSpace(bluetoothAddress)
+            ? bluetoothAddress
+            : gamepad.MacAddress;
+        if (!string.IsNullOrWhiteSpace(address))
+        {
+            string macAddress = string.Concat(address.Where(Uri.IsHexDigit)).ToUpperInvariant();
+            if (macAddress.Length > 0)
+            {
+                return $"mac:{macAddress}";
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(gamepad.SerialNumber))
+        {
+            return $"serial:{gamepad.SerialNumber.Trim()}";
+        }
+
+        if (gamepad.Vid.HasValue && gamepad.Pid.HasValue)
+        {
+            return $"ids:{gamepad.Vid.Value:X4}:{gamepad.Pid.Value:X4}";
+        }
+
+        return $"name:{gamepad.Name.Trim().ToUpperInvariant()}";
     }
 
     /// <summary>
@@ -219,5 +273,17 @@ public class GamepadDatabaseService
     public List<Gamepad> GetConnectedGamepads()
     {
         return GetAllGamepads().Where(g => g.IsConnected).ToList();
+    }
+
+    private void ReportReadError(string filePath, Exception exception)
+    {
+        if (!_reportedReadErrors.Add(filePath))
+        {
+            return;
+        }
+
+        string message = $"No se pudo leer el archivo de mando '{filePath}': {exception.Message}. Se continuará con los demás mandos.";
+        LoggerService.Instance.Error(message);
+        DataReadError?.Invoke(message);
     }
 }
