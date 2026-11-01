@@ -182,6 +182,7 @@ public partial class MandosControl : UserControl
     {
         int scrollX = Math.Abs(flowLayoutPanelGamepads.AutoScrollPosition.X);
         int scrollY = Math.Abs(flowLayoutPanelGamepads.AutoScrollPosition.Y);
+        LoggerService.Instance.Info($"Renderizando {items.Count} elemento(s) en la lista de mandos.");
         flowLayoutPanelGamepads.SuspendLayout();
         try
         {
@@ -216,6 +217,9 @@ public partial class MandosControl : UserControl
 
     private void AddGamepadCard(GamepadListItem item)
     {
+        string displayName = string.IsNullOrWhiteSpace(item.DisplayName)
+            ? "Mando detectado sin nombre"
+            : item.DisplayName;
         string status = item.ConnectionStatus switch
         {
             GamepadConnectionState.Connected => $"Conectado · {GetConnectionName(item.ConnectionType)}",
@@ -227,11 +231,15 @@ public partial class MandosControl : UserControl
         string profile = string.IsNullOrWhiteSpace(item.ActiveProfileId)
             ? "Sin perfil"
             : item.ActiveProfileId;
+        LoggerService.Instance.Info(
+            $"Tarjeta de mando: nombre='{displayName}', estado='{item.ConnectionStatus}', " +
+            $"tipo='{item.GamepadType}', conexión='{item.ConnectionType}', guardado={item.IsSaved}.");
 
         var card = new Panel
         {
             BackColor = item.IsConnected ? Color.FromArgb(239, 247, 255) : Color.FromArgb(224, 224, 224),
             BorderStyle = BorderStyle.FixedSingle,
+            AccessibleName = displayName,
             Height = 82,
             Margin = new Padding(0, 0, 0, 8),
             Padding = new Padding(8),
@@ -273,7 +281,7 @@ public partial class MandosControl : UserControl
         var details = new Label
         {
             Dock = DockStyle.Fill,
-            Text = $"{item.DisplayName}\n{status} · MAC: {macAddress}",
+            Text = $"{displayName}\n{status} · MAC: {macAddress}",
             TextAlign = ContentAlignment.MiddleLeft,
             AutoEllipsis = true,
             Font = SystemFonts.MessageBoxFont,

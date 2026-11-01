@@ -9,6 +9,7 @@ public sealed class WindowsBluetoothGamepadProvider :
     IOptionalGamepadProvider
 {
     private readonly WindowsBluetoothConnectionService _service = new();
+    private readonly WindowsBluetoothRadioStatusService _radioStatusService = new();
 
     public string Name => "Windows Bluetooth";
 
@@ -27,6 +28,15 @@ public sealed class WindowsBluetoothGamepadProvider :
         bool includeAvailableDevices,
         CancellationToken cancellationToken)
     {
+        BluetoothRadioStatus radioStatus = await _radioStatusService.GetStatusAsync()
+            .ConfigureAwait(false);
+        if (radioStatus.Availability is BluetoothRadioAvailability.Off or BluetoothRadioAvailability.Unavailable)
+        {
+            LoggerService.Instance.Info(
+                $"Se omitió la búsqueda de mandos Bluetooth: {radioStatus.Detail}");
+            return Array.Empty<GamepadDevice>();
+        }
+
         return await Task.Run<IReadOnlyList<GamepadDevice>>(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();

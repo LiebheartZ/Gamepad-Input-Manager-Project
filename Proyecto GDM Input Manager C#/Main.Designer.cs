@@ -90,9 +90,26 @@ partial class Main
         lblTitle.ForeColor = Color.White;
         lblTitle.TextAlign = ContentAlignment.MiddleLeft;
 
+        pictureBoxBluetoothStatus = new PictureBox();
+        pictureBoxBluetoothStatus.Location = new Point(744, 13);
+        pictureBoxBluetoothStatus.Size = new Size(30, 34);
+        pictureBoxBluetoothStatus.SizeMode = PictureBoxSizeMode.CenterImage;
+        pictureBoxBluetoothStatus.BackColor = Color.Transparent;
+
+        lblBluetoothStatus = new Label();
+        lblBluetoothStatus.Location = new Point(778, 15);
+        lblBluetoothStatus.Size = new Size(110, 30);
+        lblBluetoothStatus.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        lblBluetoothStatus.Font = new Font("Microsoft Sans Serif", 8.5F, FontStyle.Bold);
+        lblBluetoothStatus.ForeColor = Color.White;
+        lblBluetoothStatus.Text = "Bluetooth: ...";
+        lblBluetoothStatus.TextAlign = ContentAlignment.MiddleRight;
+
         // Agregar controles al panel header
         panelHeader.Controls.Add(pictureBoxIcon);
         panelHeader.Controls.Add(lblTitle);
+        panelHeader.Controls.Add(pictureBoxBluetoothStatus);
+        panelHeader.Controls.Add(lblBluetoothStatus);
 
         // Agregar panel header al formulario
         Controls.Add(panelHeader);
@@ -167,6 +184,8 @@ partial class Main
     private Panel panelHeader;
     private PictureBox pictureBoxIcon;
     private Label lblTitle;
+    private PictureBox pictureBoxBluetoothStatus;
+    private Label lblBluetoothStatus;
     private TabControl tabControlMain;
     private TabPage tabPageMandos;
     private TabPage tabPageTester;

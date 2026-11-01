@@ -30,10 +30,18 @@ public sealed class WindowsGamepadConnectionMetadataProvider : IGamepadConnectio
             LoggerService.Instance.Warning(warning);
         }
 
+        LoggerService.Instance.Info(
+            usbIds == null
+                ? "No se pudo determinar el número de dispositivos USB durante el enriquecimiento."
+                : $"Windows informó {usbIds.Count} identificador(es) VID/PID USB presente(s).");
+
         var bluetoothDevices = devices
-            .Where(device => device.Provider == "Windows Bluetooth")
+            .Where(device => device.Provider == "Windows Bluetooth" && device.IsConnected)
             .ToList();
         var sdlDevices = devices.Where(device => device.Provider == "SDL2").ToList();
+        LoggerService.Instance.Info(
+            $"Enriquecimiento de conexión: {sdlDevices.Count} dispositivo(s) SDL2 y " +
+            $"{bluetoothDevices.Count} mando(s) Bluetooth actualmente conectado(s).");
         var enriched = new List<GamepadDevice>(devices.Count);
 
         foreach (GamepadDevice device in devices)
@@ -81,10 +89,7 @@ public sealed class WindowsGamepadConnectionMetadataProvider : IGamepadConnectio
                     {
                         BluetoothAddress = bluetoothDevice.Identity.BluetoothAddress
                     },
-                    ConnectionType = bluetoothDevice.IsConnected
-                        ? ConnectionType.Bluetooth
-                        : ConnectionType.Unknown,
-                    IsConnected = bluetoothDevice.IsConnected,
+                    ConnectionType = ConnectionType.Bluetooth,
                     IsPaired = bluetoothDevice.IsPaired,
                     CanUnpair = bluetoothDevice.CanUnpair
                 });

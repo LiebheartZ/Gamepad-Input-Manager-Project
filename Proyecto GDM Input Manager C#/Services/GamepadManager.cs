@@ -6,6 +6,7 @@ namespace GDMInputManager.Services;
 
 public sealed class GamepadManager : IGamepadManager
 {
+    private static readonly TimeSpan ConnectionPollInterval = TimeSpan.FromSeconds(3);
     private readonly IReadOnlyList<IGamepadProvider> _providers;
     private readonly IGamepadRepository _repository;
     private readonly IGamepadConnectionEnricher _connectionEnricher;
@@ -15,8 +16,10 @@ public sealed class GamepadManager : IGamepadManager
     private readonly SemaphoreSlim _initializationGate = new(1, 1);
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly System.Threading.Timer _connectionPollTimer;
     private readonly Dictionary<string, Guid> _sessionAssociations = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<Guid> _connectedRecordIds = new();
+    private readonly List<string> _providerInitializationWarnings = new();
     private IReadOnlyList<IGamepadProvider> _initializedProviders = Array.Empty<IGamepadProvider>();
     private GamepadDetectionService? _detectionService;
     private List<GamepadRecord> _records = new();
@@ -49,6 +52,11 @@ public sealed class GamepadManager : IGamepadManager
         _deviceChangeMonitor = deviceChangeMonitor;
         _bluetoothActions = bluetoothActions;
         _repository.ReadError += Repository_ReadError;
+        _connectionPollTimer = new System.Threading.Timer(
+            _ => _ = RefreshFromDeviceChangeAsync(),
+            null,
+            Timeout.InfiniteTimeSpan,
+            Timeout.InfiniteTimeSpan);
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -89,9 +97,11 @@ public sealed class GamepadManager : IGamepadManager
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
+                    string warning = $"No se pudo iniciar el provider '{provider.Name}': {ex.Message}";
+                    _providerInitializationWarnings.Add(warning);
                     errors.Add(new GamepadErrorEventArgs(
                         provider.Name,
-                        $"No se pudo iniciar el detector '{provider.Name}'.",
+                        warning,
                         ex));
                 }
             }
@@ -129,6 +139,7 @@ public sealed class GamepadManager : IGamepadManager
             LoggerService.Instance.Info(
                 $"GamepadManager iniciado con {_initializedProviders.Count} provider(s) de detección.");
             await RefreshAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            _connectionPollTimer.Change(ConnectionPollInterval, ConnectionPollInterval);
         }
     }
 
@@ -160,7 +171,7 @@ public sealed class GamepadManager : IGamepadManager
 
         IReadOnlyList<GamepadListItem>? changedItems = null;
         var errors = new List<GamepadErrorEventArgs>();
-        var refreshWarnings = new List<string>();
+        var refreshWarnings = new List<string>(_providerInitializationWarnings);
         bool succeeded = false;
         try
         {
@@ -394,6 +405,8 @@ public sealed class GamepadManager : IGamepadManager
         }
 
         _disposed = true;
+        _connectionPollTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        _connectionPollTimer.Dispose();
         _lifetime.Cancel();
         _deviceChangeMonitor.DevicesChanged -= DeviceChangeMonitor_DevicesChanged;
         _deviceChangeMonitor.Dispose();
@@ -566,6 +579,11 @@ public sealed class GamepadManager : IGamepadManager
 
     private async Task RefreshFromDeviceChangeAsync()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         try
         {
             await RefreshAsync(_includeAvailableBluetooth, _lifetime.Token).ConfigureAwait(false);

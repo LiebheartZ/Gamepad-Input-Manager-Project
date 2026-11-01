@@ -295,6 +295,7 @@ public interface IDeviceChangeMonitor : IDisposable
 ```
 
 El monitor solo avisa “algo cambió”. El manager programa un refresh con debounce. No ejecutar una enumeración por cada mensaje de Windows.
+Como respaldo para apagados Bluetooth que no generen notificación HID, el manager vuelve a consultar el estado cada tres segundos. Los refreshes se serializan y solo se publica `ListChanged` si cambió el estado visible, evitando reconstruir tarjetas en cada consulta.
 
 ## 7. Responsabilidades detalladas por clase
 
@@ -317,6 +318,7 @@ El monitor solo avisa “algo cambió”. El manager programa un refresh con deb
 - Filtrar entradas inválidas y duplicados obvios dentro de una misma instantánea.
 - No eliminar dispositivos del último estado si la enumeración falló por error.
 - Diferenciar “enumeración correcta y cero dispositivos” de “enumeración fallida”.
+- Mantener visibles en el resultado de refresh los fallos de inicialización de providers; un provider secundario exitoso no debe ocultar que SDL2, la fuente de mandos USB, no inició.
 
 ### `GamepadIdentityService`
 - Aplicar las reglas de matching del apartado 8.
@@ -332,6 +334,7 @@ El monitor solo avisa “algo cambió”. El manager programa un refresh con deb
 - Liberar handles y SDL en cierre.
 - No clasificar Bluetooth por coincidencia aproximada de nombres como dato definitivo.
 - Los detalles de transporte se pueden enriquecer desde Windows; si no hay certeza, usar `Unknown`.
+- Para asociar SDL con Bluetooth, considerar solo mandos Bluetooth que Windows reporta conectados actualmente. Un registro emparejado pero desconectado nunca debe invalidar el `IsConnected` observado por SDL ni ocultar una conexión USB.
 
 ### `JsonGamepadRepository`
 - Conservar la ubicación actual de datos del usuario si es conocida.

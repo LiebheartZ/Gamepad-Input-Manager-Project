@@ -74,6 +74,13 @@ public sealed class SDL2GamepadProvider : IGamepadProvider
 
                 try
                 {
+                    if (SDLNative.SDL_JoystickGetAttached(joystick) == 0)
+                    {
+                        LoggerService.Instance.Info(
+                            $"SDL2 omitió el joystick desconectado del índice {index}.");
+                        continue;
+                    }
+
                     int instanceId = SDLNative.SDL_JoystickInstanceID(joystick);
                     if (instanceId < 0)
                     {
@@ -247,6 +254,9 @@ public sealed class SDL2GamepadProvider : IGamepadProvider
     {
         [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl, EntryPoint = "SDL_JoystickInstanceID")]
         internal static extern int SDL_JoystickInstanceID(IntPtr joystick);
+
+        [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl, EntryPoint = "SDL_JoystickGetAttached")]
+        internal static extern int SDL_JoystickGetAttached(IntPtr joystick);
 
         [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl, EntryPoint = "SDL_JoystickGetSerial")]
         internal static extern IntPtr SDL_JoystickGetSerial(IntPtr joystick);

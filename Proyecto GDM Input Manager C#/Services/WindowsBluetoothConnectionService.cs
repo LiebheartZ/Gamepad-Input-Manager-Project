@@ -17,6 +17,9 @@ public sealed record WindowsBluetoothDevice(
 public sealed class WindowsBluetoothConnectionService
 {
     private const int ErrorNoMoreItems = 259;
+    private const int ErrorNotReady = 21;
+    private const int ErrorServiceNotActive = 1062;
+    private const int ErrorDeviceNotConnected = 1167;
 
     public List<string> GetConnectedDeviceNames()
     {
@@ -53,6 +56,13 @@ public sealed class WindowsBluetoothConnectionService
                 return new List<WindowsBluetoothDevice>();
             }
 
+            if (IsBluetoothUnavailable(error))
+            {
+                LoggerService.Instance.Info(
+                    $"Se omitió la enumeración Bluetooth porque el adaptador no está disponible (código {error}).");
+                return new List<WindowsBluetoothDevice>();
+            }
+
             throw new Win32Exception(error, "Windows no pudo enumerar los dispositivos Bluetooth conectados.");
         }
 
@@ -82,6 +92,13 @@ public sealed class WindowsBluetoothConnectionService
             int lastError = Marshal.GetLastWin32Error();
             if (lastError != ErrorNoMoreItems)
             {
+                if (IsBluetoothUnavailable(lastError))
+                {
+                    LoggerService.Instance.Info(
+                        $"La enumeración Bluetooth terminó porque el adaptador dejó de estar disponible (código {lastError}).");
+                    return devices.Values.ToList();
+                }
+
                 throw new Win32Exception(lastError, "Windows no pudo completar la enumeración Bluetooth.");
             }
 
@@ -104,6 +121,11 @@ public sealed class WindowsBluetoothConnectionService
         {
             throw new Win32Exception(result, "Windows no pudo quitar el emparejamiento del dispositivo Bluetooth.");
         }
+    }
+
+    private static bool IsBluetoothUnavailable(int error)
+    {
+        return error is ErrorNotReady or ErrorServiceNotActive or ErrorDeviceNotConnected;
     }
 
     [DllImport("bthprops.cpl", SetLastError = true)]

@@ -19,6 +19,10 @@ namespace GDMInputManager;
 public partial class Main : Form
 {
     private readonly IGamepadManager _gamepadManager = GamepadCompositionRoot.CreateDefault();
+    private readonly WindowsBluetoothRadioStatusService _bluetoothRadioStatusService = new();
+    private readonly ToolTip _bluetoothStatusToolTip = new();
+    private System.Windows.Forms.Timer? _bluetoothStatusTimer;
+    private bool _isBluetoothStatusRefreshInProgress;
 
     /// <summary>
     /// Constructor del formulario principal
@@ -35,6 +39,14 @@ public partial class Main : Form
         try
         {
             InitializeComponent();
+            _bluetoothStatusToolTip.SetToolTip(pictureBoxBluetoothStatus, "Consultando Bluetooth...");
+            _bluetoothStatusToolTip.SetToolTip(lblBluetoothStatus, "Consultando Bluetooth...");
+            pictureBoxBluetoothStatus.Paint += PictureBoxBluetoothStatus_Paint;
+            Load += Main_Load;
+            FormClosed += Main_FormClosed;
+            _bluetoothStatusTimer = new System.Windows.Forms.Timer { Interval = 3000 };
+            components?.Add(_bluetoothStatusTimer);
+            _bluetoothStatusTimer.Tick += BluetoothStatusTimer_Tick;
             string iconPath = Path.Combine(AppContext.BaseDirectory, "Resources", "icono.ico");
             if (File.Exists(iconPath))
             {
@@ -50,4 +62,97 @@ public partial class Main : Form
         }
     }
 
+    private async void Main_Load(object? sender, EventArgs e)
+    {
+        await RefreshBluetoothStatusAsync();
+        _bluetoothStatusTimer?.Start();
+    }
+
+    private async void BluetoothStatusTimer_Tick(object? sender, EventArgs e)
+    {
+        await RefreshBluetoothStatusAsync();
+    }
+
+    private async Task RefreshBluetoothStatusAsync()
+    {
+        if (_isBluetoothStatusRefreshInProgress || IsDisposed)
+        {
+            return;
+        }
+
+        _isBluetoothStatusRefreshInProgress = true;
+        try
+        {
+            BluetoothRadioStatus status = await _bluetoothRadioStatusService.GetStatusAsync();
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            lblBluetoothStatus.Text = status.Availability switch
+            {
+                BluetoothRadioAvailability.On => "Bluetooth: Activo",
+                BluetoothRadioAvailability.Off => "Bluetooth: Apagado",
+                BluetoothRadioAvailability.Unavailable => "Bluetooth: No disponible",
+                _ => "Bluetooth: Desconocido"
+            };
+            lblBluetoothStatus.AccessibleDescription = status.Detail;
+            pictureBoxBluetoothStatus.AccessibleDescription = status.Detail;
+            _bluetoothStatusToolTip.SetToolTip(lblBluetoothStatus, status.Detail);
+            _bluetoothStatusToolTip.SetToolTip(pictureBoxBluetoothStatus, status.Detail);
+            pictureBoxBluetoothStatus.Invalidate();
+        }
+        catch (Exception ex)
+        {
+            LoggerService.Instance.Error($"No se pudo actualizar el indicador Bluetooth: {ex}");
+            lblBluetoothStatus.Text = "Bluetooth: Desconocido";
+            lblBluetoothStatus.AccessibleDescription = ex.Message;
+            pictureBoxBluetoothStatus.AccessibleDescription = ex.Message;
+            pictureBoxBluetoothStatus.Invalidate();
+        }
+        finally
+        {
+            _isBluetoothStatusRefreshInProgress = false;
+        }
+    }
+
+    private void PictureBoxBluetoothStatus_Paint(object? sender, PaintEventArgs e)
+    {
+        Color color = lblBluetoothStatus.Text switch
+        {
+            "Bluetooth: Activo" => Color.LightGreen,
+            "Bluetooth: Apagado" => Color.Salmon,
+            "Bluetooth: No disponible" => Color.DarkGray,
+            _ => Color.Gold
+        };
+        using var pen = new Pen(color, 2.5F)
+        {
+            StartCap = System.Drawing.Drawing2D.LineCap.Round,
+            EndCap = System.Drawing.Drawing2D.LineCap.Round,
+            LineJoin = System.Drawing.Drawing2D.LineJoin.Round
+        };
+
+        float centerX = e.ClipRectangle.Left + e.ClipRectangle.Width / 2F;
+        float top = e.ClipRectangle.Top + 4F;
+        float bottom = e.ClipRectangle.Bottom - 4F;
+        float middle = (top + bottom) / 2F;
+        float right = centerX + 8F;
+        float left = centerX - 8F;
+
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        e.Graphics.DrawLine(pen, centerX, top, centerX, bottom);
+        e.Graphics.DrawLine(pen, centerX, top, right, middle - 1F);
+        e.Graphics.DrawLine(pen, right, middle - 1F, centerX, middle);
+        e.Graphics.DrawLine(pen, centerX, middle, right, middle + 1F);
+        e.Graphics.DrawLine(pen, right, middle + 1F, centerX, bottom);
+        e.Graphics.DrawLine(pen, left, middle - 7F, centerX, middle);
+        e.Graphics.DrawLine(pen, centerX, middle, left, middle + 7F);
+    }
+
+    private void Main_FormClosed(object? sender, FormClosedEventArgs e)
+    {
+        _bluetoothStatusTimer?.Stop();
+        _bluetoothStatusToolTip.Dispose();
+        _gamepadManager.Dispose();
+    }
 }
