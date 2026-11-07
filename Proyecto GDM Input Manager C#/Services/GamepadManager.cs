@@ -24,10 +24,13 @@ public sealed class GamepadManager : IGamepadManager
     private GamepadDetectionService? _detectionService;
     private List<GamepadRecord> _records = new();
     private IReadOnlyList<GamepadDevice> _devices = Array.Empty<GamepadDevice>();
+    private IReadOnlyDictionary<string, IReadOnlyList<GamepadDevice>> _providerSnapshots =
+        new Dictionary<string, IReadOnlyList<GamepadDevice>>(StringComparer.OrdinalIgnoreCase);
     private GamepadListItem[] _currentItems = Array.Empty<GamepadListItem>();
-    private bool _initialized;
+    private volatile bool _initialized;
     private volatile bool _disposed;
-    private bool _includeAvailableBluetooth;
+    private volatile bool _monitoringActive;
+    private volatile bool _includeAvailableBluetooth;
     private bool _hasCompletedSnapshot;
     private int _refreshQueued;
     private int _queuedIncludeAvailableBluetooth;
@@ -57,6 +60,30 @@ public sealed class GamepadManager : IGamepadManager
             null,
             Timeout.InfiniteTimeSpan,
             Timeout.InfiniteTimeSpan);
+    }
+
+    public void SetMonitoringActive(bool isActive)
+    {
+        ThrowIfDisposed();
+        if (_monitoringActive == isActive)
+        {
+            return;
+        }
+
+        _monitoringActive = isActive;
+        if (!isActive)
+        {
+            _connectionPollTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            return;
+        }
+
+        if (!_initialized)
+        {
+            return;
+        }
+
+        _connectionPollTimer.Change(ConnectionPollInterval, ConnectionPollInterval);
+        _ = RefreshFromDeviceChangeAsync();
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -139,7 +166,10 @@ public sealed class GamepadManager : IGamepadManager
             LoggerService.Instance.Info(
                 $"GamepadManager iniciado con {_initializedProviders.Count} provider(s) de detección.");
             await RefreshAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-            _connectionPollTimer.Change(ConnectionPollInterval, ConnectionPollInterval);
+            if (_monitoringActive)
+            {
+                _connectionPollTimer.Change(ConnectionPollInterval, ConnectionPollInterval);
+            }
         }
     }
 
@@ -150,13 +180,18 @@ public sealed class GamepadManager : IGamepadManager
         ThrowIfDisposed();
         using CancellationTokenSource linkedCancellation = CreateLinkedCancellation(cancellationToken);
         cancellationToken = linkedCancellation.Token;
+        _includeAvailableBluetooth = includeAvailableBluetooth;
         if (!_initialized)
         {
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
+            if (includeAvailableBluetooth)
+            {
+                await RefreshAsync(includeAvailableBluetooth: true, cancellationToken).ConfigureAwait(false);
+            }
+
             return;
         }
 
-        _includeAvailableBluetooth = includeAvailableBluetooth;
         if (!await _refreshGate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
         {
             Interlocked.Exchange(ref _refreshQueued, 1);
@@ -189,16 +224,22 @@ public sealed class GamepadManager : IGamepadManager
                     LoggerService.Instance.Info(
                         $"Iniciando actualización de mandos (Bluetooth disponibles: {includeAvailable}).");
                     GamepadDetectionResult snapshot = await _detectionService!
-                        .EnumerateAsync(includeAvailable, cancellationToken)
+                        .EnumerateAsync(includeAvailable, cancellationToken, _providerSnapshots)
                         .ConfigureAwait(false);
                     errors.AddRange(snapshot.Warnings.Select(warning =>
                         new GamepadErrorEventArgs("Detección", warning)));
                     refreshWarnings.AddRange(snapshot.Warnings);
+                    IReadOnlyList<GamepadDevice> reconciledDevices =
+                        _identityService.MergeProviderObservations(
+                            snapshot.Devices,
+                            _records,
+                            _sessionAssociations);
                     IReadOnlyList<GamepadListItem> newItems = await ReconcileAsync(
-                        snapshot.Devices,
+                        reconciledDevices,
                         includeAvailable,
                         cancellationToken).ConfigureAwait(false);
-                    _devices = snapshot.Devices;
+                    _devices = reconciledDevices;
+                    _providerSnapshots = snapshot.ProviderSnapshots;
 
                     bool visibleItemsChanged = !_hasCompletedSnapshot ||
                                                HaveVisibleChanges(_currentItems, newItems);
@@ -211,7 +252,7 @@ public sealed class GamepadManager : IGamepadManager
                     _hasCompletedSnapshot = true;
                     succeeded = true;
                     LoggerService.Instance.Info(
-                        $"Enumeración de mandos completada: {snapshot.Devices.Count} dispositivo(s).");
+                        $"Enumeración de mandos completada: {reconciledDevices.Count} dispositivo(s).");
                 }
                 catch (OperationCanceledException)
                 {
@@ -233,6 +274,11 @@ public sealed class GamepadManager : IGamepadManager
         finally
         {
             _refreshGate.Release();
+            if (Interlocked.Exchange(ref _refreshQueued, 0) == 1 && !_disposed)
+            {
+                bool includeAvailable = Interlocked.Exchange(ref _queuedIncludeAvailableBluetooth, 0) == 1;
+                _ = RefreshFromDeviceChangeAsync(includeAvailable);
+            }
         }
 
         if (_disposed)
@@ -569,7 +615,7 @@ public sealed class GamepadManager : IGamepadManager
 
     private void DeviceChangeMonitor_DevicesChanged(object? sender, EventArgs e)
     {
-        if (_disposed)
+        if (_disposed || !_monitoringActive)
         {
             return;
         }
@@ -577,16 +623,18 @@ public sealed class GamepadManager : IGamepadManager
         _ = RefreshFromDeviceChangeAsync();
     }
 
-    private async Task RefreshFromDeviceChangeAsync()
+    private async Task RefreshFromDeviceChangeAsync(bool? includeAvailableBluetooth = null)
     {
-        if (_disposed)
+        if (_disposed || !_monitoringActive)
         {
             return;
         }
 
         try
         {
-            await RefreshAsync(_includeAvailableBluetooth, _lifetime.Token).ConfigureAwait(false);
+            await RefreshAsync(
+                includeAvailableBluetooth ?? _includeAvailableBluetooth,
+                _lifetime.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (_disposed || _lifetime.IsCancellationRequested)
         {

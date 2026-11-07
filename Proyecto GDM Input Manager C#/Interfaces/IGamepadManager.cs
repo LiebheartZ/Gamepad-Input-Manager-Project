@@ -29,6 +29,7 @@ public interface IGamepadManager : IDisposable
     event EventHandler<GamepadErrorEventArgs>? ErrorOccurred;
     event EventHandler<GamepadRefreshCompletedEventArgs>? RefreshCompleted;
 
+    void SetMonitoringActive(bool isActive);
     Task InitializeAsync(CancellationToken cancellationToken = default);
     Task RefreshAsync(bool includeAvailableBluetooth = false, CancellationToken cancellationToken = default);
     Task<GamepadRecord> SaveDetectedDeviceAsync(string deviceKey, CancellationToken cancellationToken = default);

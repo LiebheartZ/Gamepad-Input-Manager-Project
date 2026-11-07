@@ -35,13 +35,9 @@ public sealed class WindowsGamepadConnectionMetadataProvider : IGamepadConnectio
                 ? "No se pudo determinar el número de dispositivos USB durante el enriquecimiento."
                 : $"Windows informó {usbIds.Count} identificador(es) VID/PID USB presente(s).");
 
-        var bluetoothDevices = devices
-            .Where(device => device.Provider == "Windows Bluetooth" && device.IsConnected)
-            .ToList();
         var sdlDevices = devices.Where(device => device.Provider == "SDL2").ToList();
         LoggerService.Instance.Info(
-            $"Enriquecimiento de conexión: {sdlDevices.Count} dispositivo(s) SDL2 y " +
-            $"{bluetoothDevices.Count} mando(s) Bluetooth actualmente conectado(s).");
+            $"Enriquecimiento de conexión: {sdlDevices.Count} dispositivo(s) SDL2.");
         var enriched = new List<GamepadDevice>(devices.Count);
 
         foreach (GamepadDevice device in devices)
@@ -53,11 +49,6 @@ public sealed class WindowsGamepadConnectionMetadataProvider : IGamepadConnectio
                 continue;
             }
 
-            var bluetoothMatches = bluetoothDevices
-                .Where(candidate => GetFamilyKey(candidate) == GetFamilyKey(device))
-                .ToList();
-            int sameFamilySdlDevices = sdlDevices.Count(candidate => GetFamilyKey(candidate) == GetFamilyKey(device));
-            bool hasUniqueBluetoothMatch = bluetoothMatches.Count == 1 && sameFamilySdlDevices == 1;
             bool hasUsbEvidence = usbIds != null &&
                                   device.Vid.HasValue &&
                                   device.Pid.HasValue &&
@@ -67,39 +58,10 @@ public sealed class WindowsGamepadConnectionMetadataProvider : IGamepadConnectio
 
             if (hasUsbEvidence)
             {
-                enriched.Add(hasUniqueBluetoothMatch
-                    ? device with
-                    {
-                        Identity = device.Identity with
-                        {
-                            BluetoothAddress = bluetoothMatches[0].Identity.BluetoothAddress
-                        },
-                        ConnectionType = ConnectionType.USB,
-                        IsPaired = bluetoothMatches[0].IsPaired,
-                        CanUnpair = bluetoothMatches[0].CanUnpair
-                    }
-                    : device with { ConnectionType = ConnectionType.USB });
-            }
-            else if (hasUniqueBluetoothMatch && usbIds != null)
-            {
-                GamepadDevice bluetoothDevice = bluetoothMatches[0];
-                enriched.Add(device with
-                {
-                    Identity = device.Identity with
-                    {
-                        BluetoothAddress = bluetoothDevice.Identity.BluetoothAddress
-                    },
-                    ConnectionType = ConnectionType.Bluetooth,
-                    IsPaired = bluetoothDevice.IsPaired,
-                    CanUnpair = bluetoothDevice.CanUnpair
-                });
+                enriched.Add(device with { ConnectionType = ConnectionType.USB });
             }
             else
             {
-                LoggerService.Instance.Info(
-                    hasUniqueBluetoothMatch
-                        ? "No se clasificó el transporte SDL2 porque Windows no pudo consultar los dispositivos USB."
-                        : "No se asoció el dispositivo Bluetooth con SDL2: la identidad no es única.");
                 enriched.Add(device);
             }
         }
@@ -107,19 +69,4 @@ public sealed class WindowsGamepadConnectionMetadataProvider : IGamepadConnectio
         return new GamepadEnrichmentResult(enriched, warnings);
     }
 
-    private static string GetFamilyKey(GamepadDevice device)
-    {
-        return device.GamepadType switch
-        {
-            GamepadType.PlayStationDualShock4 => "PS4",
-            GamepadType.PlayStationDualSense => "PS5",
-            GamepadType.XboxOne or GamepadType.XboxSeries or GamepadType.Xbox360 => "XBOX",
-            _ => NormalizeName(device.Name)
-        };
-    }
-
-    private static string NormalizeName(string name)
-    {
-        return string.Concat(name.Where(char.IsLetterOrDigit)).ToUpperInvariant();
-    }
 }

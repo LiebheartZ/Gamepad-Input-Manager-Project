@@ -20,7 +20,6 @@ public partial class Main : Form
 {
     private readonly IGamepadManager _gamepadManager = GamepadCompositionRoot.CreateDefault();
     private readonly WindowsBluetoothRadioStatusService _bluetoothRadioStatusService = new();
-    private readonly ToolTip _bluetoothStatusToolTip = new();
     private System.Windows.Forms.Timer? _bluetoothStatusTimer;
     private bool _isBluetoothStatusRefreshInProgress;
 
@@ -39,8 +38,10 @@ public partial class Main : Form
         try
         {
             InitializeComponent();
-            _bluetoothStatusToolTip.SetToolTip(pictureBoxBluetoothStatus, "Consultando Bluetooth...");
-            _bluetoothStatusToolTip.SetToolTip(lblBluetoothStatus, "Consultando Bluetooth...");
+            tabControlMain.SelectedIndexChanged += TabControlMain_SelectedIndexChanged;
+            UpdateActiveTab();
+            pictureBoxBluetoothStatus.AccessibleDescription = "Consultando Bluetooth...";
+            lblBluetoothStatus.AccessibleDescription = "Consultando Bluetooth...";
             pictureBoxBluetoothStatus.Paint += PictureBoxBluetoothStatus_Paint;
             Load += Main_Load;
             FormClosed += Main_FormClosed;
@@ -66,6 +67,21 @@ public partial class Main : Form
     {
         await RefreshBluetoothStatusAsync();
         _bluetoothStatusTimer?.Start();
+    }
+
+    private void TabControlMain_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        UpdateActiveTab();
+    }
+
+    private void UpdateActiveTab()
+    {
+        bool mandosActive = tabControlMain.SelectedTab == tabPageMandos;
+        bool registroActive = tabControlMain.SelectedTab == tabPageRegistro;
+        mandosControl.SetTabActive(mandosActive);
+        registroControl.SetTabActive(registroActive);
+        mandosControl.Visible = mandosActive;
+        registroControl.Visible = registroActive;
     }
 
     private async void BluetoothStatusTimer_Tick(object? sender, EventArgs e)
@@ -98,8 +114,6 @@ public partial class Main : Form
             };
             lblBluetoothStatus.AccessibleDescription = status.Detail;
             pictureBoxBluetoothStatus.AccessibleDescription = status.Detail;
-            _bluetoothStatusToolTip.SetToolTip(lblBluetoothStatus, status.Detail);
-            _bluetoothStatusToolTip.SetToolTip(pictureBoxBluetoothStatus, status.Detail);
             pictureBoxBluetoothStatus.Invalidate();
         }
         catch (Exception ex)
@@ -152,7 +166,6 @@ public partial class Main : Form
     private void Main_FormClosed(object? sender, FormClosedEventArgs e)
     {
         _bluetoothStatusTimer?.Stop();
-        _bluetoothStatusToolTip.Dispose();
         _gamepadManager.Dispose();
     }
 }

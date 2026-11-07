@@ -9,12 +9,14 @@ namespace GDMInputManager.Controls;
 public partial class MandosControl : UserControl
 {
     private readonly IGamepadManager _manager;
-    private readonly ToolTip _toolTip = new();
     private readonly Dictionary<string, Image> _spriteCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Image> _disabledSpriteCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, GamepadCardView> _gamepadCards = new(StringComparer.Ordinal);
+    private Control? _emptyStateCard;
     private IReadOnlyList<GamepadListItem>? _pendingItems;
     private int _renderScheduled;
     private bool _hasSuccessfulSnapshot;
+    private volatile bool _isTabActive;
     private bool _isDisposed;
 
     public MandosControl(IGamepadManager manager)
@@ -23,6 +25,7 @@ public partial class MandosControl : UserControl
         InitializeComponent();
 
         Load += MandosControl_Load;
+        VisibleChanged += MandosControl_VisibleChanged;
         checkShowAllBluetooth.CheckedChanged += CheckShowAllBluetooth_CheckedChanged;
         checkAutoPair.CheckedChanged += CheckAutoPair_CheckedChanged;
         _manager.ListChanged += Manager_ListChanged;
@@ -30,12 +33,10 @@ public partial class MandosControl : UserControl
         _manager.RefreshCompleted += Manager_RefreshCompleted;
         Disposed += MandosControl_Disposed;
 
-        _toolTip.SetToolTip(
-            checkAutoPair,
-            "La opción está preparada; la automatización del emparejamiento se implementará después.");
-        _toolTip.SetToolTip(
-            checkShowAllBluetooth,
-            "Muestra también los mandos Bluetooth emparejados o disponibles aunque no estén conectados.");
+        checkAutoPair.AccessibleDescription =
+            "La opción está preparada; la automatización del emparejamiento se implementará después.";
+        checkShowAllBluetooth.AccessibleDescription =
+            "Muestra también los mandos Bluetooth emparejados o disponibles aunque no estén conectados.";
         labelBluetoothSearchStatus.Text = "Esperando la primera detección...";
     }
 
@@ -62,8 +63,9 @@ public partial class MandosControl : UserControl
         _manager.ListChanged -= Manager_ListChanged;
         _manager.ErrorOccurred -= Manager_ErrorOccurred;
         _manager.RefreshCompleted -= Manager_RefreshCompleted;
-        _manager.Dispose();
-        _toolTip.Dispose();
+        VisibleChanged -= MandosControl_VisibleChanged;
+        _gamepadCards.Clear();
+        _emptyStateCard = null;
         foreach (Image sprite in _spriteCache.Values)
         {
             sprite.Dispose();
@@ -80,18 +82,48 @@ public partial class MandosControl : UserControl
 
     private void Manager_ListChanged(object? sender, GamepadListChangedEventArgs e)
     {
-        if (IsDisposed || !IsHandleCreated)
+        if (IsDisposed)
         {
             return;
         }
 
         Interlocked.Exchange(ref _pendingItems, e.Items);
+        if (_isTabActive && IsHandleCreated)
+        {
+            SchedulePendingRender();
+        }
+    }
+
+    private void MandosControl_VisibleChanged(object? sender, EventArgs e)
+    {
+        if (IsDisposed || !_isTabActive)
+        {
+            return;
+        }
+
+        Interlocked.Exchange(ref _pendingItems, _manager.CurrentItems);
         SchedulePendingRender();
+    }
+
+    public void SetTabActive(bool isActive)
+    {
+        if (IsDisposed || _isTabActive == isActive)
+        {
+            return;
+        }
+
+        _isTabActive = isActive;
+        _manager.SetMonitoringActive(isActive);
+        if (isActive)
+        {
+            Interlocked.Exchange(ref _pendingItems, _manager.CurrentItems);
+            SchedulePendingRender();
+        }
     }
 
     private void SchedulePendingRender()
     {
-        if (IsDisposed || !IsHandleCreated ||
+        if (IsDisposed || !_isTabActive || !IsHandleCreated ||
             Interlocked.CompareExchange(ref _renderScheduled, 1, 0) != 0)
         {
             return;
@@ -112,7 +144,7 @@ public partial class MandosControl : UserControl
         try
         {
             IReadOnlyList<GamepadListItem>? items = Interlocked.Exchange(ref _pendingItems, null);
-            if (items == null || IsDisposed)
+            if (items == null || IsDisposed || Disposing || !_isTabActive)
             {
                 return;
             }
@@ -128,7 +160,7 @@ public partial class MandosControl : UserControl
         finally
         {
             Interlocked.Exchange(ref _renderScheduled, 0);
-            if (Volatile.Read(ref _pendingItems) != null)
+            if (_isTabActive && Volatile.Read(ref _pendingItems) != null)
             {
                 SchedulePendingRender();
             }
@@ -137,11 +169,19 @@ public partial class MandosControl : UserControl
 
     private void Manager_ErrorOccurred(object? sender, GamepadErrorEventArgs e)
     {
-        SetStatus($"{e.Source}: {e.Message}", isError: true);
+        if (_isTabActive)
+        {
+            SetStatus($"{e.Source}: {e.Message}", isError: true);
+        }
     }
 
     private void Manager_RefreshCompleted(object? sender, GamepadRefreshCompletedEventArgs e)
     {
+        if (!_isTabActive)
+        {
+            return;
+        }
+
         if (!e.Succeeded)
         {
             SetStatus("No se pudo actualizar; se conserva la última lista válida.", isError: true);
@@ -161,14 +201,20 @@ public partial class MandosControl : UserControl
 
     private void SetStatus(string text, bool isError)
     {
-        if (IsDisposed || !IsHandleCreated)
+        if (IsDisposed || !_isTabActive || !IsHandleCreated)
         {
             return;
         }
 
         if (InvokeRequired)
         {
-            BeginInvoke(new Action(() => SetStatus(text, isError)));
+            BeginInvoke(new Action(() =>
+            {
+                if (_isTabActive)
+                {
+                    SetStatus(text, isError);
+                }
+            }));
             return;
         }
 
@@ -183,28 +229,60 @@ public partial class MandosControl : UserControl
         int scrollX = Math.Abs(flowLayoutPanelGamepads.AutoScrollPosition.X);
         int scrollY = Math.Abs(flowLayoutPanelGamepads.AutoScrollPosition.Y);
         LoggerService.Instance.Info($"Renderizando {items.Count} elemento(s) en la lista de mandos.");
+        HashSet<string> itemKeys = items.Select(GetItemKey).ToHashSet(StringComparer.Ordinal);
         flowLayoutPanelGamepads.SuspendLayout();
         try
         {
-            foreach (Control control in flowLayoutPanelGamepads.Controls
-                         .Cast<Control>()
+            foreach (string staleKey in _gamepadCards.Keys
+                         .Where(key => !itemKeys.Contains(key))
                          .ToArray())
             {
-                control.Dispose();
+                GamepadCardView staleCard = _gamepadCards[staleKey];
+                flowLayoutPanelGamepads.Controls.Remove(staleCard.Card);
+                staleCard.Card.Dispose();
+                _gamepadCards.Remove(staleKey);
             }
 
-            flowLayoutPanelGamepads.Controls.Clear();
             if (items.Count == 0)
             {
-                AddEmptyStateCard(_hasSuccessfulSnapshot
+                _emptyStateCard ??= CreateEmptyStateCard();
+                ((Label)_emptyStateCard).Text = _hasSuccessfulSnapshot
                     ? "No se encontraron mandos."
-                    : "La detección aún no se ha completado.");
+                    : "La detección aún no se ha completado.";
+                if (_emptyStateCard.Parent != flowLayoutPanelGamepads)
+                {
+                    flowLayoutPanelGamepads.Controls.Add(_emptyStateCard);
+                }
             }
             else
             {
-                foreach (GamepadListItem item in items)
+                if (_emptyStateCard != null)
                 {
-                    AddGamepadCard(item);
+                    flowLayoutPanelGamepads.Controls.Remove(_emptyStateCard);
+                    _emptyStateCard.Dispose();
+                    _emptyStateCard = null;
+                }
+
+                for (int index = 0; index < items.Count; index++)
+                {
+                    GamepadListItem item = items[index];
+                    string key = GetItemKey(item);
+                    if (!_gamepadCards.TryGetValue(key, out GamepadCardView? card))
+                    {
+                        card = CreateGamepadCard(item);
+                        _gamepadCards.Add(key, card);
+                    }
+                    else
+                    {
+                        UpdateGamepadCard(card, item);
+                    }
+
+                    if (card.Card.Parent != flowLayoutPanelGamepads)
+                    {
+                        flowLayoutPanelGamepads.Controls.Add(card.Card);
+                    }
+
+                    flowLayoutPanelGamepads.Controls.SetChildIndex(card.Card, index);
                 }
             }
         }
@@ -215,31 +293,11 @@ public partial class MandosControl : UserControl
         }
     }
 
-    private void AddGamepadCard(GamepadListItem item)
+    private GamepadCardView CreateGamepadCard(GamepadListItem item)
     {
-        string displayName = string.IsNullOrWhiteSpace(item.DisplayName)
-            ? "Mando detectado sin nombre"
-            : item.DisplayName;
-        string status = item.ConnectionStatus switch
-        {
-            GamepadConnectionState.Connected => $"Conectado · {GetConnectionName(item.ConnectionType)}",
-            GamepadConnectionState.Disconnected when item.IsPaired => "Emparejado · Desconectado",
-            GamepadConnectionState.Disconnected => "Desconectado",
-            _ => "Disponible; conexión desconocida"
-        };
-        string macAddress = FormatAddress(item.BluetoothAddress);
-        string profile = string.IsNullOrWhiteSpace(item.ActiveProfileId)
-            ? "Sin perfil"
-            : item.ActiveProfileId;
-        LoggerService.Instance.Info(
-            $"Tarjeta de mando: nombre='{displayName}', estado='{item.ConnectionStatus}', " +
-            $"tipo='{item.GamepadType}', conexión='{item.ConnectionType}', guardado={item.IsSaved}.");
-
         var card = new Panel
         {
-            BackColor = item.IsConnected ? Color.FromArgb(239, 247, 255) : Color.FromArgb(224, 224, 224),
             BorderStyle = BorderStyle.FixedSingle,
-            AccessibleName = displayName,
             Height = 82,
             Margin = new Padding(0, 0, 0, 8),
             Padding = new Padding(8),
@@ -268,47 +326,37 @@ public partial class MandosControl : UserControl
             Dock = DockStyle.Fill,
             SizeMode = PictureBoxSizeMode.Zoom,
             Margin = new Padding(2),
-            Image = TryGetGamepadSprite(item.GamepadType, item.IsConnected)
         };
         var connectionIcon = new PictureBox
         {
             Dock = DockStyle.Fill,
             SizeMode = PictureBoxSizeMode.Zoom,
-            Margin = new Padding(3, 6, 3, 6),
-            Image = item.IsConnected ? GetConnectionSprite(item.ConnectionType) : null,
-            AccessibleName = status
+            Margin = new Padding(3, 6, 3, 6)
         };
         var details = new Label
         {
             Dock = DockStyle.Fill,
-            Text = $"{displayName}\n{status} · MAC: {macAddress}",
             TextAlign = ContentAlignment.MiddleLeft,
             AutoEllipsis = true,
-            Font = SystemFonts.MessageBoxFont,
-            ForeColor = item.IsConnected ? SystemColors.ControlText : Color.FromArgb(95, 95, 95)
+            Font = SystemFonts.MessageBoxFont
         };
-        var profileLabel = CreateCardLabel($"Perfil\n{profile}");
+        var profileLabel = CreateCardLabel(string.Empty);
         var batteryLabel = CreateCardLabel("Batería\nN/D");
         var unpairButton = new Button
         {
             Dock = DockStyle.Fill,
             Text = "Desemparejar",
-            Enabled = item.CanUnpair && !string.IsNullOrWhiteSpace(item.BluetoothAddress),
             Margin = new Padding(3)
         };
-        bool isSaved = item.RecordId.HasValue;
         var saveOrDeleteButton = new Button
         {
             Dock = DockStyle.Fill,
-            Text = isSaved ? "Borrar" : "Guardar",
-            Enabled = isSaved || !string.IsNullOrWhiteSpace(item.DeviceKey),
             Margin = new Padding(3)
         };
         var renameButton = new Button
         {
             Dock = DockStyle.Fill,
             Text = "Renombrar",
-            Enabled = item.RecordId.HasValue,
             Margin = new Padding(3)
         };
         var settingsButton = new Button
@@ -321,27 +369,36 @@ public partial class MandosControl : UserControl
             AccessibleName = "Configuración del mando"
         };
 
-        _toolTip.SetToolTip(settingsButton, "La configuración y el remapeo estarán disponibles más adelante.");
-        _toolTip.SetToolTip(saveOrDeleteButton, isSaved
-            ? "Quita el registro de la aplicación sin desconectar ni desemparejar el mando."
-            : "Guarda este dispositivo en la lista de mandos.");
-        unpairButton.Click += async (_, _) => await UnpairBluetoothDeviceAsync(item);
+        var view = new GamepadCardView(
+            card,
+            gamepadLogo,
+            connectionIcon,
+            details,
+            profileLabel,
+            unpairButton,
+            saveOrDeleteButton,
+            renameButton,
+            item);
+        settingsButton.AccessibleDescription = "La configuración y el remapeo estarán disponibles más adelante.";
+        unpairButton.Click += async (_, _) => await UnpairBluetoothDeviceAsync(view.Item);
         saveOrDeleteButton.Click += async (_, _) =>
         {
-            if (item.RecordId is Guid recordId)
+            GamepadListItem currentItem = view.Item;
+            if (currentItem.RecordId is Guid recordId)
             {
-                await RemoveGamepadRecordAsync(item, recordId);
+                await RemoveGamepadRecordAsync(currentItem, recordId);
             }
-            else if (!string.IsNullOrWhiteSpace(item.DeviceKey))
+            else if (!string.IsNullOrWhiteSpace(currentItem.DeviceKey))
             {
-                await SaveDetectedDeviceAsync(item.DeviceKey);
+                await SaveDetectedDeviceAsync(currentItem.DeviceKey);
             }
         };
         renameButton.Click += async (_, _) =>
         {
-            if (item.RecordId is Guid recordId)
+            GamepadListItem currentItem = view.Item;
+            if (currentItem.RecordId is Guid recordId)
             {
-                string? newName = ShowRenameDialog(item.DisplayName);
+                string? newName = ShowRenameDialog(currentItem.DisplayName);
                 if (newName != null)
                 {
                     await RenameGamepadRecordAsync(recordId, newName);
@@ -359,7 +416,48 @@ public partial class MandosControl : UserControl
         layout.Controls.Add(renameButton, 7, 0);
         layout.Controls.Add(settingsButton, 8, 0);
         card.Controls.Add(layout);
-        flowLayoutPanelGamepads.Controls.Add(card);
+        UpdateGamepadCard(view, item);
+        return view;
+    }
+
+    private void UpdateGamepadCard(GamepadCardView card, GamepadListItem item)
+    {
+        string displayName = string.IsNullOrWhiteSpace(item.DisplayName)
+            ? "Mando detectado sin nombre"
+            : item.DisplayName;
+        string status = item.ConnectionStatus switch
+        {
+            GamepadConnectionState.Connected => $"Conectado · {GetConnectionName(item.ConnectionType)}",
+            GamepadConnectionState.Disconnected when item.IsPaired => "Emparejado · Desconectado",
+            GamepadConnectionState.Disconnected => "Desconectado",
+            _ => "Disponible; conexión desconocida"
+        };
+        string profile = string.IsNullOrWhiteSpace(item.ActiveProfileId)
+            ? "Sin perfil"
+            : item.ActiveProfileId;
+        bool isSaved = item.RecordId.HasValue;
+
+        card.Item = item;
+        card.Card.BackColor = item.IsConnected
+            ? Color.FromArgb(239, 247, 255)
+            : Color.FromArgb(224, 224, 224);
+        card.Card.AccessibleName = displayName;
+        card.GamepadLogo.Image = TryGetGamepadSprite(item.GamepadType, item.IsConnected);
+        card.ConnectionIcon.Image = item.IsConnected ? GetConnectionSprite(item.ConnectionType) : null;
+        card.ConnectionIcon.AccessibleName = status;
+        card.Details.Text = $"{displayName}\n{status} · MAC: {FormatAddress(item.BluetoothAddress)}";
+        card.Details.ForeColor = item.IsConnected
+            ? SystemColors.ControlText
+            : Color.FromArgb(95, 95, 95);
+        card.ProfileLabel.Text = $"Perfil\n{profile}";
+        card.UnpairButton.Enabled = item.CanUnpair && !string.IsNullOrWhiteSpace(item.BluetoothAddress);
+        card.SaveOrDeleteButton.Text = isSaved ? "Borrar" : "Guardar";
+        card.SaveOrDeleteButton.Enabled = isSaved || !string.IsNullOrWhiteSpace(item.DeviceKey);
+        card.RenameButton.Enabled = item.RecordId.HasValue;
+
+        card.SaveOrDeleteButton.AccessibleDescription = isSaved
+            ? "Quita el registro de la aplicación sin desconectar ni desemparejar el mando."
+            : "Guarda este dispositivo en la lista de mandos.";
     }
 
     private async Task SaveDetectedDeviceAsync(string deviceKey)
@@ -600,19 +698,33 @@ public partial class MandosControl : UserControl
         };
     }
 
-    private void AddEmptyStateCard(string text)
+    private Label CreateEmptyStateCard()
     {
-        flowLayoutPanelGamepads.Controls.Add(new Label
+        return new Label
         {
             AutoSize = false,
             Height = 58,
             Width = GetCardWidth(),
-            Text = text,
             TextAlign = ContentAlignment.MiddleCenter,
             ForeColor = Color.FromArgb(90, 90, 90),
             BackColor = Color.White,
             Margin = new Padding(0, 0, 0, 8)
-        });
+        };
+    }
+
+    private static string GetItemKey(GamepadListItem item)
+    {
+        if (item.RecordId is Guid recordId)
+        {
+            return $"record:{recordId:D}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(item.DeviceKey))
+        {
+            return $"device:{item.DeviceKey}";
+        }
+
+        throw new InvalidOperationException("La tarjeta del mando no tiene una identidad estable.");
     }
 
     private int GetCardWidth()
@@ -708,5 +820,27 @@ public partial class MandosControl : UserControl
         {
             control.Width = cardWidth;
         }
+    }
+
+    private sealed class GamepadCardView(
+        Panel card,
+        PictureBox gamepadLogo,
+        PictureBox connectionIcon,
+        Label details,
+        Label profileLabel,
+        Button unpairButton,
+        Button saveOrDeleteButton,
+        Button renameButton,
+        GamepadListItem item)
+    {
+        public Panel Card { get; } = card;
+        public PictureBox GamepadLogo { get; } = gamepadLogo;
+        public PictureBox ConnectionIcon { get; } = connectionIcon;
+        public Label Details { get; } = details;
+        public Label ProfileLabel { get; } = profileLabel;
+        public Button UnpairButton { get; } = unpairButton;
+        public Button SaveOrDeleteButton { get; } = saveOrDeleteButton;
+        public Button RenameButton { get; } = renameButton;
+        public GamepadListItem Item { get; set; } = item;
     }
 }

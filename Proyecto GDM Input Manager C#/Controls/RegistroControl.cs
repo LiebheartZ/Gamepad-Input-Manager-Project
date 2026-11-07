@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Text;
 using System.Windows.Forms;
 using System.Drawing;
 using GDMInputManager.Services;
@@ -20,87 +22,224 @@ namespace GDMInputManager.Controls;
 /// </summary>
 public partial class RegistroControl : UserControl
 {
+    private const int MaximumPendingLogs = 4000;
+    private const int MaximumDisplayedCharacters = 500_000;
+    private const int MaximumLogsPerUiBatch = 250;
+    private readonly ConcurrentQueue<(string Message, LogLevel Level)> _pendingLogs = new();
+    private readonly object _pendingLogsLock = new();
+    private readonly System.Windows.Forms.Timer _logFlushTimer;
+    private int _pendingLogCount;
+    private int _droppedLogCount;
+    private bool _canScheduleFlush;
+    private volatile bool _isDisposed;
+    private bool _isTabActive;
+
     /// <summary>
     /// Constructor del control
-    /// Estructura: Inicializa componentes y suscribe al logger global
+    /// Estructura: Inicializa componentes; Main activa el logger al seleccionar la pestaña
     /// Propósito: Preparar la consola para recibir mensajes de logging
     /// </summary>
     public RegistroControl()
     {
         InitializeComponent();
-        InitializeLogger();
+        _logFlushTimer = new System.Windows.Forms.Timer { Interval = 100 };
+        _logFlushTimer.Tick += LogFlushTimer_Tick;
+        Disposed += RegistroControl_Disposed;
     }
 
     /// <summary>
-    /// Inicializa la suscripción al sistema de logging global
-    /// Estructura: Suscribe el evento OnLogMessage al método OnLogMessage
-    /// Propósito: Recibir todos los logs del sistema y mostrarlos en la consola
-    /// Proceso:
-    ///   1. Suscribe al evento OnLogMessage de LoggerService
-    ///   2. Registra un mensaje inicial indicando que la consola está activa
-    /// Nota: LoggerService usa el patrón Singleton, accesible desde cualquier parte
+    /// Activa o desactiva la recepción de logs según la selección de la pestaña.
     /// </summary>
-    private void InitializeLogger()
+    public void SetTabActive(bool isActive)
     {
-        // Suscribirse al evento de logging global
-        LoggerService.Instance.OnLogMessage += OnLogMessage;
-        LoggerService.Instance.Info("Sistema de logging iniciado. Consola de registro activa.");
-    }
-
-    /// <summary>
-    /// Manejador de evento cuando se recibe un mensaje de log
-    /// Estructura: Muestra el mensaje en el RichTextBox con el color apropiado
-    /// Propósito: Renderizar mensajes de log con formato y colores según su nivel
-    /// Proceso:
-    ///   1. Verifica si necesita Invoke (cross-thread)
-    ///   2. Agrega el mensaje al RichTextBox
-    ///   3. Colorea el texto según el nivel (rojo=error, amarillo=warning, etc.)
-    ///   4. Mantiene el scroll al final si estaba al final
-    /// Parámetros:
-    ///   - message: Texto del mensaje con timestamp
-    ///   - level: Nivel de severidad del mensaje
-    /// Nota: InvokeRequired maneja llamadas desde otros threads (thread-safe)
-    /// </summary>
-    private void OnLogMessage(string message, LogLevel level)
-    {
-        if (InvokeRequired)
+        if (_isDisposed || _isTabActive == isActive)
         {
-            Invoke(new Action<string, LogLevel>(OnLogMessage), message, level);
             return;
         }
 
+        _isTabActive = isActive;
+        if (isActive)
+        {
+            lock (_pendingLogsLock)
+            {
+                _canScheduleFlush = true;
+            }
+
+            LoggerService.Instance.OnLogMessage += OnLogMessage;
+            _logFlushTimer.Start();
+            LoggerService.Instance.Info("Consola de registro activa.");
+            return;
+        }
+
+        _logFlushTimer.Stop();
+        LoggerService.Instance.OnLogMessage -= OnLogMessage;
+        lock (_pendingLogsLock)
+        {
+            _canScheduleFlush = false;
+            ClearPendingLogs();
+        }
+    }
+
+    /// <summary>
+    /// Encola el mensaje para que el temporizador de UI lo procese en un lote.
+    /// </summary>
+    private void OnLogMessage(string message, LogLevel level)
+    {
+        lock (_pendingLogsLock)
+        {
+            if (_isDisposed || !_canScheduleFlush)
+            {
+                return;
+            }
+
+            _pendingLogs.Enqueue((message, level));
+            int pendingCount = ++_pendingLogCount;
+            if (pendingCount > MaximumPendingLogs && _pendingLogs.TryDequeue(out _))
+            {
+                _pendingLogCount--;
+                Interlocked.Increment(ref _droppedLogCount);
+            }
+        }
+    }
+
+    private void LogFlushTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_isTabActive)
+        {
+            FlushPendingLogs();
+        }
+    }
+
+    private void RegistroControl_Disposed(object? sender, EventArgs e)
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        _isDisposed = true;
+        _isTabActive = false;
+        _logFlushTimer.Stop();
+        _logFlushTimer.Tick -= LogFlushTimer_Tick;
+        _logFlushTimer.Dispose();
+        LoggerService.Instance.OnLogMessage -= OnLogMessage;
+        lock (_pendingLogsLock)
+        {
+            _canScheduleFlush = false;
+            ClearPendingLogs();
+        }
+    }
+
+    private void ClearPendingLogs()
+    {
+        while (_pendingLogs.TryDequeue(out _))
+        {
+            Interlocked.Decrement(ref _pendingLogCount);
+        }
+
+        Interlocked.Exchange(ref _droppedLogCount, 0);
+    }
+
+    private void FlushPendingLogs()
+    {
+        if (_isDisposed || Disposing || IsDisposed || !_isTabActive)
+        {
+            return;
+        }
+
+        bool scrollToEnd = richTextBoxLog.SelectionStart == richTextBoxLog.TextLength;
         int originalSelectionStart = richTextBoxLog.SelectionStart;
         int originalSelectionLength = richTextBoxLog.SelectionLength;
-        bool originalScrollToEnd = richTextBoxLog.SelectionStart == richTextBoxLog.TextLength;
+        int droppedCount = Interlocked.Exchange(ref _droppedLogCount, 0);
+        if (droppedCount > 0)
+        {
+            AppendLog(
+                $"[Registro] Se descartaron {droppedCount} mensajes antiguos pendientes para limitar el uso de memoria.",
+                LogLevel.Warning);
+        }
 
-        richTextBoxLog.AppendText(message + Environment.NewLine);
+        var batch = new List<(string Message, LogLevel Level)>(MaximumLogsPerUiBatch);
+        lock (_pendingLogsLock)
+        {
+            while (batch.Count < MaximumLogsPerUiBatch &&
+                   _pendingLogs.TryDequeue(out (string Message, LogLevel Level) entry))
+            {
+                _pendingLogCount--;
+                batch.Add(entry);
+            }
+        }
 
-        // Colorear según el nivel
-        int lastLineStart = richTextBoxLog.Text.LastIndexOf('\n', richTextBoxLog.Text.Length - message.Length - 1) + 1;
-        if (lastLineStart < 0) lastLineStart = 0;
+        AppendLogBatch(batch);
+        int trimmedCharacters = TrimDisplayedLogs();
+        if (scrollToEnd)
+        {
+            richTextBoxLog.SelectionStart = richTextBoxLog.TextLength;
+            richTextBoxLog.SelectionLength = 0;
+            richTextBoxLog.ScrollToCaret();
+        }
+        else
+        {
+            int adjustedSelectionStart = Math.Max(0, originalSelectionStart - trimmedCharacters);
+            richTextBoxLog.SelectionStart = Math.Min(adjustedSelectionStart, richTextBoxLog.TextLength);
+            richTextBoxLog.SelectionLength = Math.Min(
+                originalSelectionLength,
+                richTextBoxLog.TextLength - richTextBoxLog.SelectionStart);
+        }
+    }
 
-        richTextBoxLog.Select(lastLineStart, message.Length);
+    private void AppendLogBatch(IReadOnlyList<(string Message, LogLevel Level)> batch)
+    {
+        int start = 0;
+        while (start < batch.Count)
+        {
+            LogLevel level = batch[start].Level;
+            var text = new StringBuilder();
+            while (start < batch.Count && batch[start].Level == level)
+            {
+                text.AppendLine(batch[start].Message);
+                start++;
+            }
 
-        Color color = level switch
+            richTextBoxLog.SelectionStart = richTextBoxLog.TextLength;
+            richTextBoxLog.SelectionLength = 0;
+            richTextBoxLog.SelectionColor = GetLogColor(level);
+            richTextBoxLog.SelectedText = text.ToString();
+        }
+    }
+
+    private void AppendLog(string message, LogLevel level)
+    {
+        richTextBoxLog.SelectionStart = richTextBoxLog.TextLength;
+        richTextBoxLog.SelectionLength = 0;
+        richTextBoxLog.SelectionColor = GetLogColor(level);
+        richTextBoxLog.SelectedText = message + Environment.NewLine;
+    }
+
+    private static Color GetLogColor(LogLevel level)
+    {
+        return level switch
         {
             LogLevel.Error => Color.Red,
             LogLevel.Warning => Color.Yellow,
             LogLevel.Success => Color.Cyan,
-            LogLevel.Info => Color.White,
             _ => Color.White
         };
+    }
 
-        richTextBoxLog.SelectionColor = color;
-        richTextBoxLog.SelectionLength = 0;
-
-        // Restaurar selección y scroll
-        richTextBoxLog.SelectionStart = originalSelectionStart;
-        richTextBoxLog.SelectionLength = originalSelectionLength;
-
-        if (originalScrollToEnd)
+    private int TrimDisplayedLogs()
+    {
+        int excessCharacters = richTextBoxLog.TextLength - MaximumDisplayedCharacters;
+        if (excessCharacters <= 0)
         {
-            richTextBoxLog.ScrollToCaret();
+            return 0;
         }
+
+        string currentText = richTextBoxLog.Text;
+        int lineBreak = currentText.IndexOf('\n', excessCharacters);
+        int charactersToRemove = lineBreak >= 0 ? lineBreak + 1 : excessCharacters;
+        richTextBoxLog.Select(0, charactersToRemove);
+        richTextBoxLog.SelectedText = string.Empty;
+        return charactersToRemove;
     }
 
     /// <summary>
@@ -110,6 +249,12 @@ public partial class RegistroControl : UserControl
     private void buttonClear_Click(object sender, EventArgs e)
     {
         richTextBoxLog.Clear();
+        lock (_pendingLogsLock)
+        {
+            ClearPendingLogs();
+        }
+
+        Interlocked.Exchange(ref _droppedLogCount, 0);
         LoggerService.Instance.Info("Consola limpiada por el usuario.");
     }
 

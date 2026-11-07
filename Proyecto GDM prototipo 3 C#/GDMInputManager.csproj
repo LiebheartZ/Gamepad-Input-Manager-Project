@@ -1,0 +1,66 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Update="MainForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Update="MainForm.Designer.cs">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </Compile>
+    <Compile Update="Controls\MandosControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Update="Controls\MandosControl.Designer.cs">
+      <DependentUpon>MandosControl.cs</DependentUpon>
+    </Compile>
+    <Compile Update="Controls\TesterControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Update="Controls\TesterControl.Designer.cs">
+      <DependentUpon>TesterControl.cs</DependentUpon>
+    </Compile>
+    <Compile Update="Controls\PerfilesControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Update="Controls\PerfilesControl.Designer.cs">
+      <DependentUpon>PerfilesControl.cs</DependentUpon>
+    </Compile>
+    <Compile Update="Controls\HidHideControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Update="Controls\HidHideControl.Designer.cs">
+      <DependentUpon>HidHideControl.cs</DependentUpon>
+    </Compile>
+    <Compile Update="Controls\OpcionesControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Update="Controls\OpcionesControl.Designer.cs">
+      <DependentUpon>OpcionesControl.cs</DependentUpon>
+    </Compile>
+    <Compile Update="Controls\RegistroControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Update="Controls\RegistroControl.Designer.cs">
+      <DependentUpon>RegistroControl.cs</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Sayers.SDL2.Core" Version="1.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Resources\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
