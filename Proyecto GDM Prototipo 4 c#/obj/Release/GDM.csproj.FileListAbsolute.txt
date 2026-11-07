@@ -14,7 +14,6 @@ C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\Release\SDL2
 C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\Release\SDL2_mixer.dll
 C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\Release\SDL2_ttf.dll
 C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\Release\zlib1.dll
-C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\Release\GDM.exe
 C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\Release\GDM.deps.json
 C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\Release\GDM.runtimeconfig.json
 C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\Release\GDM.dll
@@ -39,3 +38,4 @@ C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\obj\Release\refi
 C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\obj\Release\GDM.pdb
 C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\obj\Release\GDM.genruntimeconfig.cache
 C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\obj\Release\ref\GDM.dll
+C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\Release\GDM.exe

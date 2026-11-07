@@ -55,7 +55,12 @@ public partial class App : System.Windows.Application
         }
 
         var gamepadDetectionService = new Sdl2GamepadDetectionService();
-        var window = new MainWindow(Settings, gamepadDetectionService, logService);
+        var controllerRepository = new JsonControllerRepository(StoragePaths);
+        var window = new MainWindow(
+            Settings,
+            gamepadDetectionService,
+            logService,
+            controllerRepository);
         window.Closing += SaveWindowSizeOnClosing;
         MainWindow = window;
         window.Show();

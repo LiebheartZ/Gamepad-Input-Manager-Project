@@ -121,7 +121,7 @@
                                       VerticalAlignment="Center"
                                       FontSize="14"
                                       FontWeight="SemiBold"
-                                      Text="Mandos conectados" />
+                                      Text="Mandos conectados y guardados" />
                     <Button DockPanel.Dock="Right"
                                    MinWidth="112"
                                    Padding="16,8"
@@ -129,13 +129,20 @@
                                    Content="{Binding RefreshButtonText}" />
                 </DockPanel>
 
+                <TextBlock Margin="0,0,0,8"
+                           FontSize="12"
+                           Foreground="{StaticResource SecondaryTextBrush}"
+                           Text="Los mandos guardados se asocian al reconectar solo cuando SDL proporciona un número de serie único. Sin él, GDM conserva el registro sin adivinar la identidad."
+                           TextWrapping="Wrap"
+                           Visibility="{Binding IsControllerSection, Converter={StaticResource BoolToVisibility}}" />
+
                 <TextBlock Margin="0,4,0,0"
                            Foreground="{StaticResource SecondaryTextBrush}"
-                           Text="SDL2 no ve mandos accesibles. Comprueba la conexión y, si usas HidHide, permite GDM."
+                           Text="No hay mandos conectados ni guardados. Comprueba la conexión y, si usas HidHide, permite GDM."
                            Visibility="{Binding ShowEmptyDevicesMessage, Converter={StaticResource BoolToVisibility}}" />
 
                 <ItemsControl Margin="0,8,0,0"
-                                     ItemsSource="{Binding ConnectedGamepads}"
+                                     ItemsSource="{Binding ControllerItems}"
                                      Visibility="{Binding ShowConnectedGamepads, Converter={StaticResource BoolToVisibility}}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
@@ -149,6 +156,7 @@
                                            <Grid.ColumnDefinitions>
                                                <ColumnDefinition Width="*" />
                                                <ColumnDefinition Width="Auto" />
+                                               <ColumnDefinition Width="Auto" />
                                            </Grid.ColumnDefinitions>
                                            <StackPanel>
                                                <TextBlock FontSize="16"
@@ -160,14 +168,32 @@
                                                <TextBlock Margin="0,3,0,0"
                                                           FontSize="11"
                                                           Foreground="{StaticResource SecondaryTextBrush}"
-                                                          Text="{Binding DeviceKey}" />
+                                                          Text="{Binding DeviceKey}"
+                                                          Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisibility}}" />
                                            </StackPanel>
                                            <TextBlock Grid.Column="1"
                                                       Margin="16,0,0,0"
                                                       VerticalAlignment="Center"
                                                       FontWeight="SemiBold"
                                                       Foreground="#177A56"
-                                                      Text="Conectado" />
+                                                      Text="{Binding ConnectionText}" />
+                                           <StackPanel Grid.Column="2"
+                                                       Margin="16,0,0,0"
+                                                       VerticalAlignment="Center">
+                                               <Button MinWidth="90"
+                                                       Padding="12,6"
+                                                       Command="{Binding DataContext.SaveControllerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                       CommandParameter="{Binding}"
+                                                       Content="Guardar"
+                                                       Visibility="{Binding CanSave, Converter={StaticResource BoolToVisibility}}" />
+                                               <Button MinWidth="90"
+                                                       Margin="0,6,0,0"
+                                                       Padding="12,6"
+                                                       Command="{Binding DataContext.RemoveSavedControllerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                       CommandParameter="{Binding}"
+                                                       Content="Eliminar"
+                                                       Visibility="{Binding CanRemoveSaved, Converter={StaticResource BoolToVisibility}}" />
+                                           </StackPanel>
                                        </Grid>
                                    </Border>
                         </DataTemplate>

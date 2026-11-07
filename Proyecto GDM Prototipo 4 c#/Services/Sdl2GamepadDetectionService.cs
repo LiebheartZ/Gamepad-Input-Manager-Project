@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using GDM.Models;
 using GDM.Services.Abstractions;
@@ -8,153 +7,105 @@ namespace GDM.Services;
 
 public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService
 {
-    private readonly BlockingCollection<Action> _workQueue = new();
+    private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
     private readonly Dictionary<int, OpenJoystick> _openJoysticks = [];
-    private readonly Thread _ownerThread;
-    private volatile bool _initialized;
-    private volatile bool _disposed;
-
-    public Sdl2GamepadDetectionService()
-    {
-        _ownerThread = new Thread(ProcessWorkQueue)
-        {
-            IsBackground = true,
-            Name = "GDM SDL2 device owner"
-        };
-        _ownerThread.Start();
-    }
+    private bool _initialized;
+    private bool _disposed;
 
     public Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        return InvokeAsync(() =>
+        VerifyOwnerThread();
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_initialized)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (_initialized)
-            {
-                return true;
-            }
+            return Task.CompletedTask;
+        }
 
-            if (SDL.SDL_Init(SDL.SDL_INIT_JOYSTICK | SDL.SDL_INIT_GAMECONTROLLER) < 0)
-            {
-                throw new InvalidOperationException(
-                    $"SDL2 no pudo inicializar la detección de mandos: {SDL.SDL_GetError()}");
-            }
+        if (SDL.SDL_Init(SDL.SDL_INIT_JOYSTICK | SDL.SDL_INIT_GAMECONTROLLER) < 0)
+        {
+            throw new InvalidOperationException(
+                $"SDL2 no pudo inicializar la detección de mandos: {SDL.SDL_GetError()}");
+        }
 
-            _initialized = true;
-            return true;
-        }, cancellationToken);
+        _initialized = true;
+        NativeMethods.SDL_JoystickEventState(NativeMethods.SDL_ENABLE);
+        SDL.SDL_PumpEvents();
+        return Task.CompletedTask;
     }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default)
     {
-        return InvokeAsync(() =>
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (!_initialized)
-            {
-                return true;
-            }
+        VerifyOwnerThread();
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
-            UpdateDeviceList(cancellationToken);
-            return true;
-        }, cancellationToken);
+        if (_initialized)
+        {
+            PumpEvents();
+        }
+
+        return Task.CompletedTask;
     }
 
     public Task<IReadOnlyList<ConnectedGamepad>> EnumerateConnectedAsync(
         CancellationToken cancellationToken = default)
     {
-        return InvokeAsync<IReadOnlyList<ConnectedGamepad>>(() =>
+        VerifyOwnerThread();
+        cancellationToken.ThrowIfCancellationRequested();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_initialized)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            if (!_initialized)
-            {
-                throw new InvalidOperationException("SDL2 aún no está inicializado.");
-            }
+            throw new InvalidOperationException("SDL2 aún no está inicializado.");
+        }
 
-            return UpdateDeviceList(cancellationToken);
-        }, cancellationToken);
+        PumpEvents();
+        return Task.FromResult(UpdateDeviceList(cancellationToken));
     }
 
     public void Dispose()
     {
+        VerifyOwnerThread();
         if (_disposed)
         {
             return;
         }
 
-        try
+        if (_initialized)
         {
-            InvokeAsync(() =>
+            foreach (OpenJoystick openJoystick in _openJoysticks.Values)
             {
-                if (_initialized)
-                {
-                    foreach (OpenJoystick openJoystick in _openJoysticks.Values)
-                    {
-                        SDL.SDL_JoystickClose(openJoystick.Handle);
-                    }
-
-                    _openJoysticks.Clear();
-                    SDL.SDL_Quit();
-                    _initialized = false;
-                }
-
-                _disposed = true;
-                return true;
-            }, CancellationToken.None).GetAwaiter().GetResult();
-        }
-        finally
-        {
-            _workQueue.CompleteAdding();
-            _ownerThread.Join();
-            _workQueue.Dispose();
-        }
-    }
-
-    private Task<T> InvokeAsync<T>(Func<T> action, CancellationToken cancellationToken)
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _workQueue.Add(() =>
-        {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                completion.TrySetCanceled(cancellationToken);
-                return;
+                SDL.SDL_JoystickClose(openJoystick.Handle);
             }
 
-            try
-            {
-                completion.TrySetResult(action());
-            }
-            catch (Exception exception)
-            {
-                completion.TrySetException(exception);
-            }
-        }, cancellationToken);
-
-        return completion.Task;
-    }
-
-    private void ProcessWorkQueue()
-    {
-        foreach (Action action in _workQueue.GetConsumingEnumerable())
-        {
-            action();
+            _openJoysticks.Clear();
+            SDL.SDL_Quit();
+            _initialized = false;
         }
+
+        _disposed = true;
     }
 
     private IReadOnlyList<ConnectedGamepad> UpdateDeviceList(CancellationToken cancellationToken)
     {
-        SDL.SDL_PumpEvents();
         NativeMethods.SDL_JoystickUpdate();
+
+        int count = SDL.SDL_NumJoysticks();
+        var currentInstanceIds = new HashSet<int>();
+        for (int index = 0; index < count; index++)
+        {
+            int instanceId = NativeMethods.SDL_JoystickGetDeviceInstanceID(index);
+            if (instanceId >= 0)
+            {
+                currentInstanceIds.Add(instanceId);
+            }
+        }
 
         foreach ((int instanceId, OpenJoystick openJoystick) in _openJoysticks.ToArray())
         {
-            if (NativeMethods.SDL_JoystickGetAttached(openJoystick.Handle) != 0)
+            if (currentInstanceIds.Contains(instanceId) &&
+                NativeMethods.SDL_JoystickGetAttached(openJoystick.Handle) != 0)
             {
                 continue;
             }
@@ -163,7 +114,6 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService
             _openJoysticks.Remove(instanceId);
         }
 
-        int count = SDL.SDL_NumJoysticks();
         for (int index = 0; index < count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -208,6 +158,21 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService
             .ToArray();
     }
 
+    private void PumpEvents()
+    {
+        VerifyOwnerThread();
+        SDL.SDL_PumpEvents();
+    }
+
+    private void VerifyOwnerThread()
+    {
+        if (Environment.CurrentManagedThreadId != _ownerThreadId)
+        {
+            throw new InvalidOperationException(
+                "Las operaciones de SDL2 deben ejecutarse en el hilo que creó el servicio.");
+        }
+    }
+
     private static string? GetOptionalString(IntPtr joystick, Func<IntPtr, IntPtr> getter)
     {
         try
@@ -224,6 +189,11 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService
 
     private static class NativeMethods
     {
+        internal const int SDL_ENABLE = 1;
+
+        [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int SDL_JoystickEventState(int state);
+
         [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void SDL_JoystickUpdate();
 
