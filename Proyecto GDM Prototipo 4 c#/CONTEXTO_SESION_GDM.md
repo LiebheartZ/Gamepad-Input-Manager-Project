@@ -110,8 +110,8 @@ La pestaña `Perfiles` implementa alta, edición de nombre/descripción y mapas 
 
 ### 5. Versionado
 
-- La versión inicial contabilizada fue `0.1.20`: 20 correcciones de problemas distintas documentadas en el historial disponible. La versión actual es `0.1.31`.
-- `0.1.31` agrega evidencia de diagnóstico para whitelist/lista negra de HidHide y limita la repetición de confirmaciones HID exitosas. La pérdida de lectura SDL después de ocultar sigue sin causa raíz confirmada; solicitar un nuevo `gdm.log` con eventos `HidHide diagnóstico`, `AutoHide diagnóstico` y `Mandos`.
+- La versión inicial contabilizada fue `0.1.20`: 20 correcciones de problemas distintas documentadas en el historial disponible. La versión actual es `0.2.0`.
+- `0.1.31` agrega evidencia de diagnóstico para whitelist/lista negra de HidHide y limita la repetición de confirmaciones HID exitosas. `0.2.0` incorpora un acceso desde Mandos a `joy.cpl` para probar los mandos con la ventana de Dispositivos de juego de Windows. La pérdida de lectura SDL después de ocultar sigue sin causa raíz confirmada.
 - El primer componente cambia ante una renovación drástica del programa; el segundo, ante una o más funciones nuevas desde la versión anterior; el tercero sube por cada arreglo de un problema existente.
 - La interfaz muestra `VERSIÓN`, un ID corto derivado del identificador del módulo compilado y la fecha/hora local del artefacto.
 - El ID y la fecha identifican el ejecutable compilado; no modifican el número de versión.

@@ -815,11 +815,18 @@
                                       FontSize="14"
                                       FontWeight="SemiBold"
                                       Text="Mandos conectados y guardados" />
-                    <Button DockPanel.Dock="Right"
-                                   MinWidth="112"
-                                   Padding="16,8"
-                                   Command="{Binding RefreshDevicesCommand}"
-                                   Content="{Binding RefreshButtonText}" />
+                    <StackPanel DockPanel.Dock="Right"
+                                Orientation="Horizontal">
+                        <Button MinWidth="150"
+                                Margin="0,0,8,0"
+                                Padding="12,8"
+                                Click="OpenWindowsGameControllers"
+                                Content="Dispositivos de juego" />
+                        <Button MinWidth="112"
+                                Padding="16,8"
+                                Command="{Binding RefreshDevicesCommand}"
+                                Content="{Binding RefreshButtonText}" />
+                    </StackPanel>
                 </DockPanel>
 
                 <TextBlock Margin="0,0,0,8"

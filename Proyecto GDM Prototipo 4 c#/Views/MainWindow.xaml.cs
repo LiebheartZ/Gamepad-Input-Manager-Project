@@ -290,4 +290,32 @@ public partial class MainWindow : Window
             ? null
             : ItemsControl.ContainerFromElement(listBox, source) as ListBoxItem;
     }
+
+    private void OpenWindowsGameControllers(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            using Process? process = Process.Start(new ProcessStartInfo
+            {
+                FileName = "control.exe",
+                Arguments = "joy.cpl",
+                UseShellExecute = true
+            });
+            if (process is null)
+            {
+                throw new InvalidOperationException(
+                    "Windows no inició la ventana Dispositivos de juego.");
+            }
+        }
+        catch (Exception exception) when (
+            exception is Win32Exception or InvalidOperationException)
+        {
+            MessageBox.Show(
+                this,
+                $"No se pudo abrir la ventana Dispositivos de juego de Windows.\n\n{exception.Message}",
+                "No se pudo abrir Dispositivos de juego",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
 }
