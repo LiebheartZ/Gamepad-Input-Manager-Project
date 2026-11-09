@@ -11,15 +11,20 @@ public sealed record ControllerListItem(
     public string HardwareIdLabel =>
         ConnectedDevice?.HardwareIdLabel ?? GetSavedHardwareIdLabel(SavedRecord!);
 
-    public string ConnectionText => SavedRecord is null
-        ? "Conectado"
-        : ConnectedDevice is null
-            ? "Desconectado · Guardado"
-            : "Conectado · Guardado";
+    public string ConnectionText => ConnectedDevice?.IsHiddenByGdm == true
+        ? SavedRecord is null
+            ? "Oculto por GDM"
+            : "Oculto por GDM · Guardado"
+        : SavedRecord is null
+            ? "Conectado"
+            : ConnectedDevice is null
+                ? "Desconectado · Guardado"
+                : "Conectado · Guardado";
 
     public string? DeviceKey => ConnectedDevice?.DeviceKey;
     public bool IsConnected => ConnectedDevice is not null;
-    public bool CanSave => ConnectedDevice is not null && SavedRecord is null;
+    public bool CanSave =>
+        ConnectedDevice is { IsHiddenByGdm: false } && SavedRecord is null;
     public bool CanRemoveSaved => SavedRecord is not null;
 
     private static string GetSavedHardwareIdLabel(ControllerRecord record)

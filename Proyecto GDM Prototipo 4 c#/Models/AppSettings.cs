@@ -8,6 +8,9 @@ public sealed record AppSettings
     public string Theme { get; init; } = "System";
     public string Language { get; init; } = "es";
     public bool CheckForUpdatesOnStartup { get; init; } = true;
+    public bool StartWithWindows { get; init; }
+    public bool StartMinimized { get; init; }
+    public bool StartWithWindowsAsTask { get; init; }
     public double WindowWidth { get; init; } = 800;
     public double WindowHeight { get; init; } = 600;
 }

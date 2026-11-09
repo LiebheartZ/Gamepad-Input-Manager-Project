@@ -8,6 +8,7 @@ public sealed class LocalStoragePathService : IStoragePathService
     public string RootDirectory { get; }
     public string SettingsFilePath => Path.Combine(RootDirectory, "Settings", "app-settings.json");
     public string ControllersIndexFilePath => Path.Combine(RootDirectory, "Controllers", "controllers-index.json");
+    public string ProfilesIndexFilePath => Path.Combine(RootDirectory, "Profiles", "profiles-index.json");
     public string LogFilePath => Path.Combine(RootDirectory, "Logs", "gdm.log");
 
     public LocalStoragePathService(string? rootDirectory = null)
@@ -31,5 +32,18 @@ public sealed class LocalStoragePathService : IStoragePathService
             RootDirectory,
             "Controllers",
             $"controller_{controllerId:N}.json");
+    }
+
+    public string GetProfileFilePath(Guid profileId)
+    {
+        if (profileId == Guid.Empty)
+        {
+            throw new ArgumentException("El identificador del perfil no puede estar vacío.", nameof(profileId));
+        }
+
+        return Path.Combine(
+            RootDirectory,
+            "Profiles",
+            $"profile_{profileId:N}.json");
     }
 }

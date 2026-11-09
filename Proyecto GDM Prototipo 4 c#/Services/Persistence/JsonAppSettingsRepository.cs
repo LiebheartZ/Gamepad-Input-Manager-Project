@@ -48,9 +48,10 @@ public sealed class JsonAppSettingsRepository : IAppSettingsRepository
                 $"La versión {settings.SchemaVersion} de app-settings.json no es compatible.");
         }
 
-        if (string.IsNullOrWhiteSpace(settings.Theme))
+        if (settings.Theme is not ("System" or "Light" or "Dark"))
         {
-            throw new InvalidDataException("El tema de la aplicación no puede estar vacío.");
+            throw new InvalidDataException(
+                "El tema de la aplicación debe ser System, Light o Dark.");
         }
 
         if (string.IsNullOrWhiteSpace(settings.Language))

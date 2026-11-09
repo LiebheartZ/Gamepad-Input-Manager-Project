@@ -7,21 +7,30 @@ using System.Threading;
 using System.Windows.Input;
 using System.Windows.Threading;
 using GDM.Models;
+using GDM.Services;
 using GDM.Services.Abstractions;
 
 namespace GDM.ViewModels;
 
 public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
+    private static readonly TimeSpan NormalDevicePollingInterval = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan VirtualOutputDevicePollingInterval = TimeSpan.FromMilliseconds(500);
     private readonly IGamepadDetectionService? _gamepadDetectionService;
     private readonly IAppLogService? _appLogService;
     private readonly IControllerRepository? _controllerRepository;
     private readonly Func<ControllerRecord, bool>? _confirmRemoveSavedController;
+    private readonly SettingsViewModel? _settingsViewModel;
+    private readonly TesterViewModel _testerViewModel;
     private readonly Dispatcher _dispatcher;
     private readonly AsyncCommand _refreshDevicesCommand;
     private readonly AsyncParameterCommand _saveControllerCommand;
     private readonly AsyncParameterCommand _removeSavedControllerCommand;
-    private readonly Timer? _pollTimer;
+    private readonly IProfileRepository? _profileRepository;
+    private readonly IHidHideService _hidHideService;
+    private readonly Func<ControllerProfile, bool>? _confirmDeleteProfile;
+    private readonly System.Threading.Timer? _pollTimer;
+    private readonly DispatcherTimer _testerInputTimer;
     private readonly Dictionary<Guid, string> _sessionSavedDeviceKeys = [];
     private Task? _controllerInitializationTask;
     private CancellationTokenSource? _refreshCancellation;
@@ -32,6 +41,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isControllerDataLoaded;
     private bool _isSavingController;
     private bool _isRemovingController;
+    private bool _hasInitializedAutoStart;
     private string _currentSection = "Inicio";
     private string _sectionTitle = "Inicio";
     private string _sectionDescription = "Base de la nueva versión de Gamepad Device Manager.";
@@ -49,13 +59,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<ControllerRecord> SavedControllers { get; } = [];
     public ObservableCollection<ControllerListItem> ControllerItems { get; } = [];
     public ObservableCollection<DiagnosticLogEntry> LogEntries { get; } = [];
+    public SettingsViewModel? Settings => _settingsViewModel;
+    public TesterViewModel Tester => _testerViewModel;
+    public ProfilesViewModel Profiles { get; }
+    public HidHideViewModel HidHide { get; }
     public string? LogFilePath => _appLogService?.LogFilePath;
-    public string BuildLabel { get; } =
-        $"BUILD {Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "local"}";
+    public string VersionLabel { get; } =
+        $"VERSIÓN {ApplicationAssembly.GetName().Version?.ToString(3) ?? "local"}";
+    public string ProgressIdLabel { get; } =
+        $"ID {ApplicationAssembly.ManifestModule.ModuleVersionId.ToString("N")[..8].ToUpperInvariant()}";
+    public string BuildTimestampLabel { get; } = GetBuildTimestampLabel();
 
     public bool IsControllerSection => CurrentSection == "Mandos";
+    public bool IsSettingsSection => CurrentSection == "Ajustes";
+    public bool IsTesterSection => CurrentSection == "Tester";
     public bool IsLogSection => CurrentSection == "Registro";
-    public bool ShowStatusCard => !IsLogSection;
+    public bool IsProfilesSection => CurrentSection == "Perfiles";
+    public bool IsHidHideSection => CurrentSection == "HidHide";
+    public bool ShowStatusCard =>
+        !IsLogSection && !IsSettingsSection && !IsTesterSection && !IsProfilesSection && !IsHidHideSection;
     public bool HasConnectedGamepads => ConnectedGamepads.Count > 0;
     public bool ShowEmptyDevicesMessage =>
         IsControllerSection && _isControllerDataLoaded && ControllerItems.Count == 0;
@@ -68,7 +90,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             if (SetProperty(ref _isRefreshing, value))
             {
-                _refreshDevicesCommand.NotifyCanExecuteChanged();
                 NotifyControllerCommandsCanExecuteChanged();
                 OnPropertyChanged(nameof(RefreshButtonText));
             }
@@ -85,7 +106,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetProperty(ref _currentSection, value))
             {
                 OnPropertyChanged(nameof(IsControllerSection));
+                OnPropertyChanged(nameof(IsSettingsSection));
+                OnPropertyChanged(nameof(IsTesterSection));
                 OnPropertyChanged(nameof(IsLogSection));
+                OnPropertyChanged(nameof(IsProfilesSection));
+                OnPropertyChanged(nameof(IsHidHideSection));
                 OnPropertyChanged(nameof(ShowStatusCard));
                 OnPropertyChanged(nameof(ShowEmptyDevicesMessage));
                 OnPropertyChanged(nameof(ShowConnectedGamepads));
@@ -121,18 +146,67 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IGamepadDetectionService? gamepadDetectionService = null,
         IAppLogService? appLogService = null,
         IControllerRepository? controllerRepository = null,
-        Func<ControllerRecord, bool>? confirmRemoveSavedController = null)
+        Func<ControllerRecord, bool>? confirmRemoveSavedController = null,
+        SettingsViewModel? settingsViewModel = null,
+        IGamepadInputService? gamepadInputService = null,
+        IProfileRepository? profileRepository = null,
+        Func<ControllerProfile, bool>? confirmDeleteProfile = null,
+        IVirtualGamepadService? virtualGamepadService = null,
+        Func<ConnectedGamepad, bool>? requestElevatedVirtualGamepad = null,
+        IHidHideService? hidHideService = null)
     {
         _gamepadDetectionService = gamepadDetectionService;
         _appLogService = appLogService;
         _controllerRepository = controllerRepository;
+        _profileRepository = profileRepository;
+        _confirmDeleteProfile = confirmDeleteProfile;
         _confirmRemoveSavedController = confirmRemoveSavedController;
+        _settingsViewModel = settingsViewModel;
+        IGamepadInputService? inputService =
+            gamepadInputService ?? gamepadDetectionService as IGamepadInputService;
+        _testerViewModel = new TesterViewModel(
+            inputService,
+            message => _appLogService?.Write(
+                DiagnosticLogLevel.Error,
+                "Tester",
+                message),
+            virtualGamepadService,
+            requestElevatedVirtualGamepad);
+        _hidHideService = hidHideService ?? new HidHideService();
+        HidHide = new HidHideViewModel(
+            _hidHideService,
+            (level, message, exception) => _appLogService?.Write(
+                level,
+                "HidHide",
+                message,
+                exception));
         _dispatcher = Dispatcher.CurrentDispatcher;
+        Profiles = new ProfilesViewModel(
+            _profileRepository,
+            _controllerRepository,
+            UpdateControllerProfileAssignment,
+            _confirmDeleteProfile,
+            (message, exception) => _appLogService?.Write(
+                DiagnosticLogLevel.Error,
+                "Perfiles",
+                message,
+                exception),
+            inputService,
+            virtualGamepadService,
+            requestElevatedVirtualGamepad,
+            HidHide.HideAutomaticallyAsync,
+            HidHide.ShowAutomaticallyAsync,
+            device => _hidHideService.IsPhysicalDevicePresent(device.DevicePath!),
+            (level, message, exception) => _appLogService?.Write(
+                level,
+                "AutoHide diagnóstico",
+                message,
+                exception));
+        Profiles.PropertyChanged += OnProfilesPropertyChanged;
         NavigateCommand = new NavigationCommand(Navigate);
         _refreshDevicesCommand = new AsyncCommand(
             () => RefreshDevicesAsync(forceRescan: true),
-            () => !IsRefreshing &&
-                (_controllerRepository is null || _isControllerDataLoaded));
+            () => !IsRefreshing && !_isSavingController && !_isRemovingController);
         _saveControllerCommand = new AsyncParameterCommand(
             parameter => parameter is ControllerListItem item
                 ? SaveControllerAsync(item)
@@ -156,20 +230,32 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 !_isRemovingController);
         if (_gamepadDetectionService is not null)
         {
-            _pollTimer = new Timer(
+            _pollTimer = new System.Threading.Timer(
                 OnPollTimerElapsed,
                 null,
                 Timeout.InfiniteTimeSpan,
                 Timeout.InfiniteTimeSpan);
         }
 
+        _testerInputTimer = new DispatcherTimer(DispatcherPriority.Input, _dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(50)
+        };
+        _testerInputTimer.Tick += OnTesterInputTimerTick;
+        _testerViewModel.PropertyChanged += OnTesterPropertyChanged;
+
         ConnectedGamepads.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(HasConnectedGamepads));
             OnPropertyChanged(nameof(ShowEmptyDevicesMessage));
             OnPropertyChanged(nameof(ShowConnectedGamepads));
+            HidHide.UpdateDevices(ConnectedGamepads);
         };
-        SavedControllers.CollectionChanged += (_, _) => RebuildControllerItems();
+        SavedControllers.CollectionChanged += (_, _) =>
+        {
+            RebuildControllerItems();
+            Profiles.UpdateSavedControllers(SavedControllers);
+        };
 
         if (_appLogService is not null)
         {
@@ -182,14 +268,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    public Task InitializeAsync()
+    public async Task InitializeAsync()
     {
-        if (_isControllerDataLoaded)
+        if (!_isControllerDataLoaded)
         {
-            return Task.CompletedTask;
+            if (_controllerInitializationTask is null || _controllerInitializationTask.IsCompleted)
+            {
+                _controllerInitializationTask = LoadSavedControllersAsync();
+            }
+
+            await _controllerInitializationTask;
         }
 
-        return _controllerInitializationTask ??= LoadSavedControllersAsync();
+        if (Profiles.HasAutoStartVirtualGamepad && !_hasInitializedAutoStart)
+        {
+            _hasInitializedAutoStart = true;
+            StartMonitoring();
+            await Profiles.InitializeAsync();
+            await RefreshDevicesAsync(forceRescan: true);
+        }
     }
 
     private async Task LoadSavedControllersAsync()
@@ -273,22 +370,33 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             IReadOnlyList<ConnectedGamepad> devices =
                 await _gamepadDetectionService.EnumerateConnectedAsync(cancellationToken);
 
-            if (!ConnectedGamepads.SequenceEqual(devices))
+            HidHide.UpdateDevices(devices);
+            ConnectedGamepad[] displayDevices = MergeHiddenDevices(devices);
+            if (!ConnectedGamepads.SequenceEqual(displayDevices))
             {
                 ConnectedGamepads.Clear();
-                foreach (ConnectedGamepad device in devices)
+                foreach (ConnectedGamepad device in displayDevices)
                 {
                     ConnectedGamepads.Add(device);
                 }
             }
+            Tester.UpdateDevices(displayDevices);
             RebuildControllerItems();
 
+            int hiddenCount = displayDevices.Count(device => device.IsHiddenByGdm);
             StatusTitle = devices.Count == 0
-                ? "SDL2 no ve mandos accesibles"
-                : $"{devices.Count} mando{(devices.Count == 1 ? string.Empty : "s")} conectado{(devices.Count == 1 ? string.Empty : "s")}";
-            StatusMessage = devices.Count == 0
-                ? "SDL2 no detecta mandos accesibles. Si usas DS4Windows o HidHide, el mando físico puede estar oculto para GDM. Añade GDM a la lista de aplicaciones permitidas de HidHide; no hace falta desactivar la protección global."
-                : "La lista muestra únicamente dispositivos que SDL2 detecta conectados y accesibles en este momento.";
+                ? hiddenCount == 0
+                    ? "SDL2 no ve mandos accesibles"
+                    : $"{hiddenCount} mando{(hiddenCount == 1 ? string.Empty : "s")} oculto{(hiddenCount == 1 ? string.Empty : "s")} por HidHide"
+                : $"{devices.Count} mando{(devices.Count == 1 ? string.Empty : "s")} detectado{(devices.Count == 1 ? string.Empty : "s")}" +
+                  (hiddenCount > 0
+                      ? $" · {hiddenCount} oculto{(hiddenCount == 1 ? string.Empty : "s")}"
+                      : string.Empty);
+            StatusMessage = hiddenCount > 0
+                ? "Los mandos ocultos por GDM se mantienen en las listas mientras Windows confirme que siguen conectados. SDL puede no permitir leer sus entradas mientras estén ocultos."
+                : devices.Count == 0
+                    ? "SDL2 no detecta mandos accesibles. Si usas DS4Windows o HidHide, el mando físico puede estar oculto para GDM. Añade GDM a la lista de aplicaciones permitidas de HidHide; no hace falta desactivar la protección global."
+                    : "La lista incluye dispositivos detectados por SDL2 y conserva los mandos ocultos por GDM mientras sigan conectados.";
 
             if (_lastLoggedDevices is null || !_lastLoggedDevices.SequenceEqual(devices))
             {
@@ -332,6 +440,88 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task StartVirtualGamepadOnStartupAsync(ConnectedGamepad requestedDevice)
+    {
+        ArgumentNullException.ThrowIfNull(requestedDevice);
+        await InitializeAsync();
+        await InitializeAndRefreshAsync();
+        await Profiles.InitializeAsync();
+        while (IsRefreshing)
+        {
+            await Task.Delay(50);
+        }
+
+        ConnectedGamepad? matchedDevice = FindStartupDevice(requestedDevice);
+        if (matchedDevice is null)
+        {
+            Profiles.ReportVirtualGamepadStatus(
+                "GDM se abrió como administrador, pero no pudo identificar sin ambigüedad el mando original. " +
+                "Comprueba que el mando físico guardado esté conectado e inténtalo de nuevo.");
+            return;
+        }
+
+        Profiles.UpdateConnectedControllers(ControllerItems);
+        await Profiles.StartVirtualGamepadOnStartupAsync(matchedDevice);
+    }
+
+    public Task CompleteStartupAsync() => Profiles.CompleteStartupAsync();
+
+    private ConnectedGamepad? FindStartupDevice(ConnectedGamepad requestedDevice)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedDevice.DevicePath))
+        {
+            ConnectedGamepad[] pathMatches = ConnectedGamepads
+                .Where(device => string.Equals(
+                    device.DevicePath,
+                    requestedDevice.DevicePath,
+                    StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (pathMatches.Length == 1)
+            {
+                return pathMatches[0];
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(requestedDevice.SerialNumber))
+        {
+            ConnectedGamepad[] serialMatches = ConnectedGamepads
+                .Where(device =>
+                    string.Equals(
+                        device.SerialNumber,
+                        requestedDevice.SerialNumber,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    device.VendorId == requestedDevice.VendorId &&
+                    device.ProductId == requestedDevice.ProductId)
+                .ToArray();
+            if (serialMatches.Length == 1)
+            {
+                return serialMatches[0];
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(requestedDevice.SdlGuid) &&
+            requestedDevice.VendorId is not null &&
+            requestedDevice.ProductId is not null)
+        {
+            ConnectedGamepad[] guidMatches = ConnectedGamepads
+                .Where(device =>
+                    string.Equals(
+                        device.SdlGuid,
+                        requestedDevice.SdlGuid,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    device.VendorId == requestedDevice.VendorId &&
+                    device.ProductId == requestedDevice.ProductId &&
+                    string.Equals(device.Name, requestedDevice.Name, StringComparison.Ordinal))
+                .ToArray();
+            if (guidMatches.Length == 1)
+            {
+                return guidMatches[0];
+            }
+        }
+
+        return null;
+    }
+
     public void StartMonitoring()
     {
         if (_gamepadDetectionService is null || _isMonitoring)
@@ -340,7 +530,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         _isMonitoring = true;
-        _pollTimer?.Change(TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+        UpdateDevicePollingInterval();
     }
 
     public void StopMonitoring()
@@ -348,6 +538,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _pollTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         _isMonitoring = false;
         _refreshCancellation?.Cancel();
+    }
+
+    private void UpdateDevicePollingInterval()
+    {
+        if (_isMonitoring)
+        {
+            TimeSpan interval = Profiles.IsAnyVirtualGamepadRunning
+                ? VirtualOutputDevicePollingInterval
+                : NormalDevicePollingInterval;
+            _pollTimer?.Change(interval, interval);
+        }
     }
 
     private void OnPollTimerElapsed(object? state)
@@ -367,7 +568,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             try
             {
-                if (_isMonitoring)
+                if (_isMonitoring &&
+                    (_controllerRepository is null || _isControllerDataLoaded))
                 {
                     await RefreshDevicesAsync();
                 }
@@ -377,6 +579,117 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 Interlocked.Exchange(ref _isPollQueued, 0);
             }
         }));
+    }
+
+    private async void OnTesterInputTimerTick(object? sender, EventArgs e)
+    {
+        if (!IsTesterSection &&
+            !IsProfilesSection &&
+            !IsHidHideSection &&
+            !Tester.IsVirtualGamepadRunning &&
+            !Profiles.IsAnyVirtualGamepadRunning)
+        {
+            return;
+        }
+
+        try
+        {
+            await Profiles.ReadVirtualGamepadInputsAsync();
+            await Tester.ReadSelectedInputAsync();
+        }
+        catch (DllNotFoundException exception)
+        {
+            await HandleTesterInputErrorAsync(exception);
+        }
+        catch (BadImageFormatException exception)
+        {
+            await HandleTesterInputErrorAsync(exception);
+        }
+        catch (EntryPointNotFoundException exception)
+        {
+            await HandleTesterInputErrorAsync(exception);
+        }
+        catch (ObjectDisposedException exception)
+        {
+            await HandleTesterInputErrorAsync(exception);
+        }
+        catch (InvalidOperationException exception)
+        {
+            await HandleTesterInputErrorAsync(exception);
+        }
+        catch (IOException exception)
+        {
+            await HandleTesterInputErrorAsync(exception);
+        }
+        catch (System.ComponentModel.Win32Exception exception)
+        {
+            await HandleTesterInputErrorAsync(exception);
+        }
+    }
+
+    private void OnTesterPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(TesterViewModel.IsVirtualGamepadRunning))
+        {
+            if (Tester.IsVirtualGamepadRunning)
+            {
+                _testerInputTimer.Interval = TimeSpan.FromMilliseconds(8);
+                _testerInputTimer.Start();
+            }
+            else
+            {
+                _testerInputTimer.Interval = TimeSpan.FromMilliseconds(50);
+                if (!IsTesterSection)
+                {
+                    _testerInputTimer.Stop();
+                }
+            }
+        }
+    }
+
+    private void OnProfilesPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ProfilesViewModel.HasAutoStartVirtualGamepad))
+        {
+            if (Profiles.HasAutoStartVirtualGamepad && _isControllerDataLoaded)
+            {
+                StartMonitoring();
+                _ = InitializeAndRefreshAsync();
+            }
+            else if (!IsControllerSection && !IsTesterSection && !IsProfilesSection &&
+                     !Profiles.IsAnyVirtualGamepadRunning)
+            {
+                StopMonitoring();
+            }
+
+            return;
+        }
+
+        if (e.PropertyName != nameof(ProfilesViewModel.IsAnyVirtualGamepadRunning))
+        {
+            return;
+        }
+
+        UpdateDevicePollingInterval();
+        if (Profiles.IsAnyVirtualGamepadRunning)
+        {
+            _testerInputTimer.Interval = TimeSpan.FromMilliseconds(8);
+            _testerInputTimer.Start();
+        }
+        else
+        {
+            _testerInputTimer.Interval = TimeSpan.FromMilliseconds(50);
+            if (!IsTesterSection && !IsProfilesSection)
+            {
+                _testerInputTimer.Stop();
+            }
+        }
+    }
+
+    private Task HandleTesterInputErrorAsync(Exception exception)
+    {
+        Tester.ReportInputError(exception);
+        return Task.CompletedTask;
     }
 
     private void Navigate(object? parameter)
@@ -403,8 +716,29 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             (
                 "Ajustes",
                 "Preferencias generales de GDM.",
-                "Módulo pendiente de integración",
-                "La configuración persistente se añadirá junto con los servicios JSON del núcleo."
+                "Ajustes disponibles",
+                "Personaliza la apariencia de la aplicación y guarda tus preferencias."
+            ),
+            "Tester" =>
+            (
+                "Tester",
+                "Comprueba en tiempo real los controles de los mandos conectados.",
+                "Tester de mandos",
+                "Selecciona un mando conectado para ver sus botones y ejes. La lectura no modifica la configuración."
+            ),
+            "Perfiles" =>
+            (
+                "Perfiles",
+                "Crea perfiles reutilizables y asígnalos a tus mandos guardados.",
+                "Perfiles de mando",
+                "Los perfiles se guardan en archivos JSON y todavía no aplican remapeos a los juegos."
+            ),
+            "HidHide" =>
+            (
+                "HidHide",
+                "Oculta mandos físicos mientras GDM permanece abierto, sin perder acceso desde GDM.",
+                "Control de ocultamiento",
+                "Las entradas agregadas por GDM se restauran al cerrar normalmente y se recuperan al siguiente inicio."
             ),
             "Registro" =>
             (
@@ -422,14 +756,80 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             )
         };
 
-        if (CurrentSection == "Mandos")
+        if (CurrentSection is "Mandos" or "Tester" or "Perfiles" or "HidHide")
         {
             StartMonitoring();
+            if (Profiles.IsAnyVirtualGamepadRunning)
+            {
+                _testerInputTimer.Interval = TimeSpan.FromMilliseconds(8);
+                _testerInputTimer.Start();
+            }
+            else if (CurrentSection is "Tester" or "Perfiles" or "HidHide")
+            {
+                _testerInputTimer.Interval = TimeSpan.FromMilliseconds(50);
+                _testerInputTimer.Start();
+            }
+            else
+            {
+                _testerInputTimer.Stop();
+            }
+
             _ = InitializeAndRefreshAsync();
+            if (CurrentSection == "Perfiles")
+            {
+                _ = InitializeProfilesAsync();
+            }
+            if (CurrentSection == "HidHide")
+            {
+                _ = HidHide.RefreshStatusAsync();
+            }
         }
         else
         {
-            StopMonitoring();
+            if (Tester.IsVirtualGamepadRunning)
+            {
+                _testerInputTimer.Start();
+            }
+            else
+            {
+                _testerInputTimer.Stop();
+            }
+            if (Profiles.HasAutoStartVirtualGamepad)
+            {
+                StartMonitoring();
+                _ = InitializeAndRefreshAsync();
+            }
+            else
+            {
+                StopMonitoring();
+            }
+        }
+    }
+
+    private async Task InitializeProfilesAsync()
+    {
+        await InitializeAsync();
+        if (_isControllerDataLoaded)
+        {
+            Profiles.UpdateSavedControllers(SavedControllers);
+        }
+        else
+        {
+            Profiles.SetControllersUnavailable();
+        }
+
+        await Profiles.InitializeAsync();
+    }
+
+    private void UpdateControllerProfileAssignment(ControllerRecord updated)
+    {
+        for (int index = 0; index < SavedControllers.Count; index++)
+        {
+            if (SavedControllers[index].ControllerId == updated.ControllerId)
+            {
+                SavedControllers[index] = updated;
+                return;
+            }
         }
     }
 
@@ -438,6 +838,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         await InitializeAsync();
         if (_controllerRepository is not null && !_isControllerDataLoaded)
         {
+            StopMonitoring();
             return;
         }
 
@@ -500,11 +901,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             await _controllerRepository.SaveAsync(record);
             SavedControllers.Add(record);
-            _sessionSavedDeviceKeys[record.ControllerId] = currentDevice.DeviceKey;
+            if (string.IsNullOrWhiteSpace(currentDevice.SerialNumber))
+            {
+                _sessionSavedDeviceKeys[record.ControllerId] = currentDevice.DeviceKey;
+            }
             RebuildControllerItems();
             StatusTitle = "Mando guardado";
             StatusMessage = string.IsNullOrWhiteSpace(currentDevice.SerialNumber)
-                ? "El registro se guardó, pero SDL2 no proporcionó un identificador individual estable. GDM lo conservará como desconectado y no lo asociará automáticamente al reconectarlo."
+                ? "SDL2 no proporcionó un número de serie. Al reconectar, GDM asociará el registro solo si nombre y VID/PID coinciden de forma única; esto identifica el modelo, no garantiza que sea la misma unidad física."
                 : "El registro del mando se guardó. GDM lo asociará al reconectarlo solo si el identificador individual coincide de forma única.";
             _appLogService?.Write(
                 DiagnosticLogLevel.Information,
@@ -526,6 +930,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         catch (InvalidOperationException exception)
         {
             SetControllerSaveError("No se pudo consultar el mando antes de guardarlo", exception);
+        }
+        catch (DllNotFoundException exception)
+        {
+            SetControllerSaveError("No se encontró SDL2 al guardar el mando", exception);
+        }
+        catch (BadImageFormatException exception)
+        {
+            SetControllerSaveError("SDL2 no es compatible al guardar el mando", exception);
+        }
+        catch (EntryPointNotFoundException exception)
+        {
+            SetControllerSaveError("Falta una función requerida de SDL2", exception);
         }
         finally
         {
@@ -603,15 +1019,51 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         ControllerItems.Clear();
         var matchedDeviceKeys = new HashSet<string>(StringComparer.Ordinal);
+        var matchesByControllerId = new Dictionary<Guid, ConnectedGamepad>();
+
         foreach (ControllerRecord record in SavedControllers)
         {
-            ConnectedGamepad? matchingDevice = FindUniqueSerialMatch(record)
-                ?? FindSessionDeviceMatch(record);
+            ConnectedGamepad? matchingDevice = FindUniqueSerialMatch(record);
             if (matchingDevice is not null)
             {
                 matchedDeviceKeys.Add(matchingDevice.DeviceKey);
+                matchesByControllerId[record.ControllerId] = matchingDevice;
+            }
+        }
+
+        foreach (ControllerRecord record in SavedControllers)
+        {
+            if (matchesByControllerId.ContainsKey(record.ControllerId))
+            {
+                continue;
             }
 
+            ConnectedGamepad? matchingDevice = FindSessionDeviceMatch(record, matchedDeviceKeys);
+            if (matchingDevice is not null)
+            {
+                matchedDeviceKeys.Add(matchingDevice.DeviceKey);
+                matchesByControllerId[record.ControllerId] = matchingDevice;
+            }
+        }
+
+        foreach (ControllerRecord record in SavedControllers)
+        {
+            if (matchesByControllerId.ContainsKey(record.ControllerId))
+            {
+                continue;
+            }
+
+            ConnectedGamepad? matchingDevice = FindUniqueModelMatch(record, matchedDeviceKeys);
+            if (matchingDevice is not null)
+            {
+                matchedDeviceKeys.Add(matchingDevice.DeviceKey);
+                matchesByControllerId[record.ControllerId] = matchingDevice;
+            }
+        }
+
+        foreach (ControllerRecord record in SavedControllers)
+        {
+            matchesByControllerId.TryGetValue(record.ControllerId, out ConnectedGamepad? matchingDevice);
             ControllerItems.Add(new ControllerListItem(matchingDevice, record));
         }
 
@@ -623,10 +1075,71 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
         }
 
+        Profiles.UpdateConnectedControllers(ControllerItems);
         OnPropertyChanged(nameof(ShowEmptyDevicesMessage));
         OnPropertyChanged(nameof(ShowConnectedGamepads));
         _saveControllerCommand.NotifyCanExecuteChanged();
         _removeSavedControllerCommand.NotifyCanExecuteChanged();
+    }
+
+    private ConnectedGamepad[] MergeHiddenDevices(IReadOnlyList<ConnectedGamepad> sdlDevices)
+    {
+        var merged = sdlDevices
+            .Select(device => device with
+            {
+                IsHiddenByGdm = !string.IsNullOrWhiteSpace(device.DevicePath) &&
+                    _hidHideService.IsHiddenByGdm(device.DevicePath)
+            })
+            .ToList();
+        var knownDeviceKeys = merged
+            .Select(device => device.DeviceKey)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (ConnectedGamepad hiddenDevice in HidHide.GetHiddenDevices())
+        {
+            if (knownDeviceKeys.Contains(hiddenDevice.DeviceKey))
+            {
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(hiddenDevice.DevicePath))
+            {
+                continue;
+            }
+
+            if (merged.Any(device => string.Equals(
+                    device.DevicePath,
+                    hiddenDevice.DevicePath,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            bool isPresent;
+            try
+            {
+                isPresent = _hidHideService.IsPhysicalDevicePresent(hiddenDevice.DevicePath);
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or
+                System.ComponentModel.Win32Exception)
+            {
+                _appLogService?.Write(
+                    DiagnosticLogLevel.Warning,
+                    "HidHide",
+                    $"No se pudo confirmar la presencia de «{hiddenDevice.Name}» para mantenerlo en las listas.",
+                    exception);
+                continue;
+            }
+
+            if (isPresent)
+            {
+                merged.Add(hiddenDevice with { IsHiddenByGdm = true });
+                knownDeviceKeys.Add(hiddenDevice.DeviceKey);
+            }
+        }
+
+        return merged.ToArray();
     }
 
     private ConnectedGamepad? FindUniqueSerialMatch(ControllerRecord record)
@@ -647,15 +1160,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return matches.Length == 1 ? matches[0] : null;
     }
 
-    private ConnectedGamepad? FindSessionDeviceMatch(ControllerRecord record)
+    private ConnectedGamepad? FindSessionDeviceMatch(
+        ControllerRecord record,
+        IReadOnlySet<string> matchedDeviceKeys)
     {
-        if (!_sessionSavedDeviceKeys.TryGetValue(record.ControllerId, out string? deviceKey))
+        if (!string.IsNullOrWhiteSpace(GetSavedSerial(record)) ||
+            !_sessionSavedDeviceKeys.TryGetValue(record.ControllerId, out string? deviceKey))
         {
             return null;
         }
 
         ConnectedGamepad? match = ConnectedGamepads.SingleOrDefault(
-            device => device.DeviceKey == deviceKey);
+            device => device.DeviceKey == deviceKey && !matchedDeviceKeys.Contains(device.DeviceKey));
         if (match is null)
         {
             _sessionSavedDeviceKeys.Remove(record.ControllerId);
@@ -664,6 +1180,60 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         return HasMatchingHardwareIds(record, match) ? match : null;
     }
+
+    private ConnectedGamepad? FindUniqueModelMatch(
+        ControllerRecord record,
+        IReadOnlySet<string> matchedDeviceKeys)
+    {
+        string? vendor = GetSavedEvidence(record, "VendorId");
+        string? product = GetSavedEvidence(record, "ProductId");
+        string? model = GetSavedModel(record);
+        if (!string.IsNullOrWhiteSpace(GetSavedSerial(record)) ||
+            string.IsNullOrWhiteSpace(vendor) ||
+            string.IsNullOrWhiteSpace(product) ||
+            string.IsNullOrWhiteSpace(model) ||
+            SavedControllers.Count(candidate => HaveSameModelAndHardware(record, candidate)) != 1)
+        {
+            return null;
+        }
+
+        ConnectedGamepad[] matches = ConnectedGamepads
+            .Where(device =>
+                !matchedDeviceKeys.Contains(device.DeviceKey) &&
+                string.Equals(device.Name, model, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(
+                    device.VendorId?.ToString("X4"),
+                    vendor,
+                    StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(
+                    device.ProductId?.ToString("X4"),
+                    product,
+                    StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
+    private static bool HaveSameModelAndHardware(ControllerRecord left, ControllerRecord right)
+    {
+        string? leftModel = GetSavedModel(left);
+        string? rightModel = GetSavedModel(right);
+        string? leftVendor = GetSavedEvidence(left, "VendorId");
+        string? rightVendor = GetSavedEvidence(right, "VendorId");
+        string? leftProduct = GetSavedEvidence(left, "ProductId");
+        string? rightProduct = GetSavedEvidence(right, "ProductId");
+
+        return !string.IsNullOrWhiteSpace(leftModel) &&
+            !string.IsNullOrWhiteSpace(leftVendor) &&
+            !string.IsNullOrWhiteSpace(leftProduct) &&
+            string.Equals(leftModel, rightModel, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(leftVendor, rightVendor, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(leftProduct, rightProduct, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetSavedModel(ControllerRecord record) =>
+        string.IsNullOrWhiteSpace(record.Identity.Model)
+            ? record.DisplayName
+            : record.Identity.Model;
 
     private static bool HasMatchingHardwareIds(ControllerRecord record, ConnectedGamepad device)
     {
@@ -734,6 +1304,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void NotifyControllerCommandsCanExecuteChanged()
     {
+        _refreshDevicesCommand.NotifyCanExecuteChanged();
         _saveControllerCommand.NotifyCanExecuteChanged();
         _removeSavedControllerCommand.NotifyCanExecuteChanged();
     }
@@ -761,13 +1332,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         string descriptions = string.Join(
             "; ",
             devices.Select(device =>
-                $"{device.Name} ({device.HardwareIdLabel}, {device.DeviceKey})"));
+                $"{device.Name} ({device.HardwareIdLabel}, {device.DeviceKey}, " +
+                $"Serial={device.SerialNumber ?? "(n/d)"}, " +
+                $"Ruta={device.DevicePath ?? "(n/d)"}, GUID={device.SdlGuid ?? "(n/d)"})"));
         return $"SDL2 detectó {devices.Count} mando(s): {descriptions}.";
     }
 
     public void Dispose()
     {
         StopMonitoring();
+        _testerInputTimer.Stop();
+        _testerInputTimer.Tick -= OnTesterInputTimerTick;
+        _testerViewModel.PropertyChanged -= OnTesterPropertyChanged;
+        Tester.Dispose();
         _pollTimer?.Dispose();
         if (_appLogService is not null)
         {
@@ -777,6 +1354,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _refreshCancellation?.Dispose();
         _refreshCancellation = null;
     }
+
+    public Task RestoreHidHideBeforeCloseAsync() =>
+        HidHide.RestoreManagedChangesAsync();
 
     private void OnLogEntryAdded(DiagnosticLogEntry entry)
     {
@@ -812,6 +1392,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+    private static Assembly ApplicationAssembly =>
+        typeof(MainWindowViewModel).Assembly;
+
+    private static string GetBuildTimestampLabel()
+    {
+        string assemblyPath = ApplicationAssembly.Location;
+        if (!File.Exists(assemblyPath))
+        {
+            return "Compilado: no disponible";
+        }
+
+        DateTime compiledAt = File.GetLastWriteTimeUtc(assemblyPath).ToLocalTime();
+        return $"Compilado: {compiledAt:dd/MM/yyyy HH:mm:ss}";
+    }
 
     private sealed class NavigationCommand(Action<object?> execute) : ICommand
     {
