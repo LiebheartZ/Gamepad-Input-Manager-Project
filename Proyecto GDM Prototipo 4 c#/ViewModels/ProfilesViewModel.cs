@@ -978,7 +978,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                     StartVirtualGamepadAsync,
                     StopVirtualGamepadAsync,
                     ToggleAutoStartVirtualGamepadAsync,
-                    ToggleAutoHidePhysicalGamepadAsync);
+                    ToggleAutoHidePhysicalGamepadAsync,
+                    ToggleKeepHiddenOnExitAsync);
                 VirtualGamepads.Add(output);
             }
 
@@ -1294,11 +1295,13 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         item.SetStarting(true);
         try
         {
+            bool autoHideEnabled = !item.Record.Settings.AutoHidePhysicalGamepad;
             ControllerRecord updated = item.Record with
             {
                 Settings = item.Record.Settings with
                 {
-                    AutoHidePhysicalGamepad = !item.Record.Settings.AutoHidePhysicalGamepad
+                    AutoHidePhysicalGamepad = autoHideEnabled,
+                    KeepHiddenOnExit = autoHideEnabled && item.Record.Settings.KeepHiddenOnExit
                 },
                 UpdatedAtUtc = DateTimeOffset.UtcNow
             };
@@ -1346,6 +1349,60 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             item.SetStarting(false);
         }
     }
+
+    private async Task ToggleKeepHiddenOnExitAsync(VirtualGamepadControllerViewModel item)
+    {
+        if (_controllerRepository is null || item.IsStarting)
+        {
+            item.SetStatus("No se puede guardar la opción de mantener oculto el mando.");
+            return;
+        }
+
+        item.SetStarting(true);
+        try
+        {
+            ControllerRecord updated = item.Record with
+            {
+                Settings = item.Record.Settings with
+                {
+                    KeepHiddenOnExit = !item.Record.Settings.KeepHiddenOnExit
+                },
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            };
+            await _controllerRepository.SaveAsync(updated);
+            int index = SavedControllers.IndexOf(item.Record);
+            if (index >= 0)
+            {
+                SavedControllers[index] = updated;
+            }
+
+            item.UpdateRecord(updated);
+            _onControllerUpdated(updated);
+            item.SetStatus(updated.Settings.KeepHiddenOnExit
+                ? "El mando permanecerá oculto al cerrar GDM y se recuperará en el siguiente inicio."
+                : "El mando volverá a mostrarse al cerrar GDM.");
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            item.SetStatus($"No se pudo guardar la preferencia: {exception.Message}");
+            _reportError?.Invoke(item.StatusMessage, exception);
+        }
+        finally
+        {
+            item.SetStarting(false);
+        }
+    }
+
+    public IReadOnlyDictionary<string, bool> GetAutoHiddenDeviceExitPolicies() =>
+        VirtualGamepads
+            .Where(item =>
+                item.ConnectedDevice is { DevicePath: not null } device &&
+                _autoHiddenDeviceKeys.Contains(device.DeviceKey))
+            .ToDictionary(
+                item => item.ConnectedDevice!.DevicePath!,
+                item => item.Record.Settings.KeepHiddenOnExit,
+                StringComparer.OrdinalIgnoreCase);
 
     private async Task ApplyAutomaticHideAsync(
         VirtualGamepadControllerViewModel item,

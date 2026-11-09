@@ -96,10 +96,14 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
 
     public async Task<bool> HideAutomaticallyAsync(ConnectedGamepad device)
     {
-        if (string.IsNullOrWhiteSpace(device.DevicePath) ||
-            _service.IsHiddenByGdm(device.DevicePath))
+        if (string.IsNullOrWhiteSpace(device.DevicePath))
         {
             return false;
+        }
+
+        if (_service.IsHiddenByGdm(device.DevicePath))
+        {
+            return true;
         }
 
         try
@@ -256,11 +260,19 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
         }
     }
 
-    public async Task RestoreManagedChangesAsync()
+    public async Task RestoreManagedChangesAsync(
+        IReadOnlyDictionary<string, bool>? hiddenDeviceExitPolicies = null)
     {
         try
         {
-            await _service.RestoreManagedChangesAsync();
+            if (hiddenDeviceExitPolicies is null)
+            {
+                await _service.RestoreManagedChangesAsync();
+            }
+            else
+            {
+                await _service.RestoreManagedChangesAsync(hiddenDeviceExitPolicies);
+            }
         }
         catch (Exception exception) when (
             exception is IOException or

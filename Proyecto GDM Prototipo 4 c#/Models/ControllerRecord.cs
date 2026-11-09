@@ -31,6 +31,7 @@ public sealed record ControllerSettings
     public bool VibrationEnabled { get; init; } = true;
     public bool AutoStartVirtualGamepad { get; init; }
     public bool AutoHidePhysicalGamepad { get; init; }
+    public bool KeepHiddenOnExit { get; init; }
 }
 
 public sealed record ControllerIdentityEvidence

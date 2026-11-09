@@ -77,7 +77,8 @@ public sealed class HidHideService : IHidHideService
             EnsureCanHide(device);
             string executablePath = EnsureCurrentApplicationIsWhitelisted(device);
 
-            Dictionary<string, string> managedDevices = await ReadRecoveryJournalAsync(cancellationToken);
+            RecoveryJournalData journal = await ReadRecoveryJournalAsync(cancellationToken);
+            Dictionary<string, string> managedDevices = journal.ManagedDevices;
             string[] blacklist = ReadMultiSz(device, IoctlGetBlacklist);
             bool wasAlreadyBlacklisted = blacklist.Contains(
                 instanceId,
@@ -102,7 +103,10 @@ public sealed class HidHideService : IHidHideService
             }
 
             managedDevices[instanceId] = devicePath;
-            await SaveRecoveryJournalAsync(managedDevices, cancellationToken);
+            await SaveRecoveryJournalAsync(
+                managedDevices,
+                journal.PersistentDeviceInstanceIds,
+                cancellationToken);
             SendMultiSz(device, IoctlSetBlacklist, [.. blacklist, instanceId]);
             string[] updatedBlacklist = ReadMultiSz(device, IoctlGetBlacklist);
             if (!updatedBlacklist.Contains(instanceId, StringComparer.OrdinalIgnoreCase))
@@ -142,7 +146,8 @@ public sealed class HidHideService : IHidHideService
         try
         {
             await EnsureRecoveryAttemptedAsync(cancellationToken);
-            Dictionary<string, string> managedDevices = await ReadRecoveryJournalAsync(cancellationToken);
+            RecoveryJournalData journal = await ReadRecoveryJournalAsync(cancellationToken);
+            Dictionary<string, string> managedDevices = journal.ManagedDevices;
             if (!managedDevices.ContainsKey(instanceId))
             {
                 return;
@@ -162,7 +167,11 @@ public sealed class HidHideService : IHidHideService
             }
 
             managedDevices.Remove(instanceId);
-            await SaveRecoveryJournalAsync(managedDevices, cancellationToken);
+            journal.PersistentDeviceInstanceIds.Remove(instanceId);
+            await SaveRecoveryJournalAsync(
+                managedDevices,
+                journal.PersistentDeviceInstanceIds,
+                cancellationToken);
             _managedDevices.Remove(instanceId);
             WriteDiagnostic(
                 DiagnosticLogLevel.Information,
@@ -226,31 +235,70 @@ public sealed class HidHideService : IHidHideService
         }
     }
 
-    public async Task RestoreManagedChangesAsync(CancellationToken cancellationToken = default)
+    public Task RestoreManagedChangesAsync(CancellationToken cancellationToken = default) =>
+        RestoreManagedChangesAsync(
+            new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase),
+            cancellationToken);
+
+    public async Task RestoreManagedChangesAsync(
+        IReadOnlyDictionary<string, bool> hiddenDeviceExitPolicies,
+        CancellationToken cancellationToken = default)
     {
         await _operationLock.WaitAsync(cancellationToken);
         try
         {
-            if (_managedDevices.Count == 0)
+            RecoveryJournalData journal = await ReadRecoveryJournalAsync(cancellationToken);
+            Dictionary<string, string> managedDevices = journal.ManagedDevices;
+            if (managedDevices.Count == 0)
             {
                 return;
             }
 
-            Dictionary<string, string> managedDevices = await ReadRecoveryJournalAsync(cancellationToken);
-            string[] managedIds = _managedDevices.Keys.ToArray();
-            using SafeFileHandle device = OpenDevice();
-            string[] blacklist = ReadMultiSz(device, IoctlGetBlacklist);
-            string[] updatedBlacklist = blacklist
-                .Where(id => !managedIds.Contains(id, StringComparer.OrdinalIgnoreCase))
+            HashSet<string> persistentIds = journal.PersistentDeviceInstanceIds;
+            foreach ((string devicePath, bool keepHidden) in hiddenDeviceExitPolicies)
+            {
+                string instanceId = ResolveDeviceInstanceId(devicePath);
+                if (!managedDevices.ContainsKey(instanceId))
+                {
+                    continue;
+                }
+
+                if (keepHidden)
+                {
+                    persistentIds.Add(instanceId);
+                }
+                else
+                {
+                    persistentIds.Remove(instanceId);
+                }
+            }
+
+            string[] idsToRestore = managedDevices.Keys
+                .Where(id => !persistentIds.Contains(id))
                 .ToArray();
-            SendMultiSz(device, IoctlSetBlacklist, updatedBlacklist);
-            foreach (string instanceId in managedIds)
+            if (idsToRestore.Length > 0)
+            {
+                using SafeFileHandle device = OpenDevice();
+                string[] blacklist = ReadMultiSz(device, IoctlGetBlacklist);
+                string[] updatedBlacklist = blacklist
+                    .Where(id => !idsToRestore.Contains(id, StringComparer.OrdinalIgnoreCase))
+                    .ToArray();
+                SendMultiSz(device, IoctlSetBlacklist, updatedBlacklist);
+            }
+
+            foreach (string instanceId in idsToRestore)
             {
                 managedDevices.Remove(instanceId);
             }
 
-            await SaveRecoveryJournalAsync(managedDevices, cancellationToken);
+            persistentIds.IntersectWith(managedDevices.Keys);
+            await SaveRecoveryJournalAsync(managedDevices, persistentIds, cancellationToken);
             _managedDevices.Clear();
+            foreach (string instanceId in persistentIds)
+            {
+                _managedDevices[instanceId] = instanceId;
+            }
+
             _recoveryAttempted = true;
         }
         finally
@@ -266,8 +314,13 @@ public sealed class HidHideService : IHidHideService
             return false;
         }
 
-        return _managedDevices.Values.Any(path =>
-            string.Equals(path, devicePath, StringComparison.OrdinalIgnoreCase));
+        if (!_deviceInstanceIdsByPath.TryGetValue(devicePath, out string? instanceId))
+        {
+            instanceId = ResolveDeviceInstanceId(devicePath);
+            _deviceInstanceIdsByPath[devicePath] = instanceId;
+        }
+
+        return _managedDevices.ContainsKey(instanceId);
     }
 
     public bool IsPhysicalDevicePresent(string devicePath)
@@ -307,31 +360,47 @@ public sealed class HidHideService : IHidHideService
 
     private async Task RecoverPendingChangesCoreAsync(CancellationToken cancellationToken)
     {
-        Dictionary<string, string> managedDevices = await ReadRecoveryJournalAsync(cancellationToken);
+        RecoveryJournalData journal = await ReadRecoveryJournalAsync(cancellationToken);
+        Dictionary<string, string> managedDevices = journal.ManagedDevices;
+        HashSet<string> persistentIds = journal.PersistentDeviceInstanceIds;
         if (managedDevices.Count == 0)
         {
             return;
         }
 
-        using SafeFileHandle device = OpenDevice();
-        string[] managedIds = managedDevices.Keys.ToArray();
-        string[] blacklist = ReadMultiSz(device, IoctlGetBlacklist);
-        string[] updatedBlacklist = blacklist
-            .Where(id => !managedIds.Contains(id, StringComparer.OrdinalIgnoreCase))
+        string[] idsToRestore = managedDevices.Keys
+            .Where(id => !persistentIds.Contains(id))
             .ToArray();
-        SendMultiSz(device, IoctlSetBlacklist, updatedBlacklist);
-        await SaveRecoveryJournalAsync(
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-            cancellationToken);
+        if (idsToRestore.Length > 0)
+        {
+            using SafeFileHandle device = OpenDevice();
+            string[] blacklist = ReadMultiSz(device, IoctlGetBlacklist);
+            string[] updatedBlacklist = blacklist
+                .Where(id => !idsToRestore.Contains(id, StringComparer.OrdinalIgnoreCase))
+                .ToArray();
+            SendMultiSz(device, IoctlSetBlacklist, updatedBlacklist);
+        }
+
+        foreach (string instanceId in idsToRestore)
+        {
+            managedDevices.Remove(instanceId);
+        }
+
+        persistentIds.IntersectWith(managedDevices.Keys);
+        await SaveRecoveryJournalAsync(managedDevices, persistentIds, cancellationToken);
         _managedDevices.Clear();
+        foreach (string instanceId in persistentIds)
+        {
+            _managedDevices[instanceId] = instanceId;
+        }
     }
 
-    private async Task<Dictionary<string, string>> ReadRecoveryJournalAsync(
+    private async Task<RecoveryJournalData> ReadRecoveryJournalAsync(
         CancellationToken cancellationToken)
     {
         if (!File.Exists(_recoveryFilePath))
         {
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            return new RecoveryJournalData();
         }
 
         string json = await File.ReadAllTextAsync(_recoveryFilePath, cancellationToken);
@@ -367,11 +436,21 @@ public sealed class HidHideService : IHidHideService
             devices[instanceId] = instanceId;
         }
 
-        return devices;
+        var persistentDevices = new HashSet<string>(
+            journal.KeepHiddenDeviceInstanceIds ?? [],
+            StringComparer.OrdinalIgnoreCase);
+        if (!persistentDevices.IsSubsetOf(devices.Keys))
+        {
+            throw new InvalidDataException(
+                "El diario de HidHide marca como persistente un dispositivo que no está en la lista administrada.");
+        }
+
+        return new RecoveryJournalData(devices, persistentDevices);
     }
 
     private async Task SaveRecoveryJournalAsync(
         IReadOnlyDictionary<string, string> devices,
+        IReadOnlySet<string> persistentDeviceInstanceIds,
         CancellationToken cancellationToken)
     {
         if (devices.Count == 0)
@@ -392,7 +471,11 @@ public sealed class HidHideService : IHidHideService
 
         Directory.CreateDirectory(directory);
         string temporaryPath = $"{_recoveryFilePath}.{Guid.NewGuid():N}.tmp";
-        string json = JsonSerializer.Serialize(new RecoveryJournal(devices.Keys.ToArray()));
+        string json = JsonSerializer.Serialize(new RecoveryJournal(
+            devices.Keys.ToArray(),
+            persistentDeviceInstanceIds
+                .Where(devices.ContainsKey)
+                .ToArray()));
         byte[] content = Encoding.UTF8.GetBytes(json);
         using (var stream = new FileStream(
                    temporaryPath,
@@ -410,7 +493,21 @@ public sealed class HidHideService : IHidHideService
         File.Move(temporaryPath, _recoveryFilePath, overwrite: true);
     }
 
-    private sealed record RecoveryJournal(string[] AddedDeviceInstanceIds);
+    private sealed record RecoveryJournal(
+        string[] AddedDeviceInstanceIds,
+        string[]? KeepHiddenDeviceInstanceIds = null);
+
+    private sealed record RecoveryJournalData(
+        Dictionary<string, string> ManagedDevices,
+        HashSet<string> PersistentDeviceInstanceIds)
+    {
+        public RecoveryJournalData()
+            : this(
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase))
+        {
+        }
+    }
 
     private static void EnsureCanHide(SafeFileHandle device)
     {

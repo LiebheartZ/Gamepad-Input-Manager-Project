@@ -1597,6 +1597,14 @@
                                                               CommandParameter="{Binding}"
                                                               Content="Ocultar automáticamente"
                                                               ToolTip="Oculta el mando físico solo después de iniciar correctamente su mando virtual." />
+                                                    <CheckBox Margin="12,0,0,0"
+                                                              VerticalAlignment="Center"
+                                                              IsEnabled="{Binding AutoHideOnConnect}"
+                                                              IsChecked="{Binding KeepHiddenOnExit, Mode=OneWay}"
+                                                              Command="{Binding ToggleKeepHiddenOnExitCommand}"
+                                                              CommandParameter="{Binding}"
+                                                              Content="Mantener oculto al cerrar GDM"
+                                                              ToolTip="Conserva este mando en la lista negra de HidHide al cerrar GDM. Seguirá oculto al volver a abrir GDM hasta que lo muestres desde la pestaña HidHide." />
                                                 </WrapPanel>
                                             </Grid>
                                         </Border>

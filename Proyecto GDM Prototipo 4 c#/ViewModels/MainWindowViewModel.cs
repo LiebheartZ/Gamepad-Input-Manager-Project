@@ -1356,7 +1356,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public Task RestoreHidHideBeforeCloseAsync() =>
-        HidHide.RestoreManagedChangesAsync();
+        HidHide.RestoreManagedChangesAsync(Profiles.GetAutoHiddenDeviceExitPolicies());
 
     private void OnLogEntryAdded(DiagnosticLogEntry entry)
     {
