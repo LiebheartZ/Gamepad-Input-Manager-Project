@@ -4,9 +4,11 @@ using GDM.Services.Abstractions;
 using GDM.Services.Persistence;
 using GDM.Views;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -14,6 +16,23 @@ using Color = System.Windows.Media.Color;
 using MessageBox = System.Windows.MessageBox;
 
 namespace GDM;
+
+public class ZeroToVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is int count)
+        {
+            return count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        return Visibility.Collapsed;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
 
 public partial class App : System.Windows.Application
 {
@@ -229,6 +248,7 @@ public partial class App : System.Windows.Application
         }
 
         var virtualGamepadService = new HidMaestroVirtualGamepadService(gamepadDetectionService);
+        var bluetoothGamepadService = new BluetoothGamepadService();
         var window = new MainWindow(
             Settings,
             gamepadDetectionService,
@@ -239,6 +259,7 @@ public partial class App : System.Windows.Application
             virtualGamepadService,
             startupVirtualGamepad,
             hidHideService,
+            bluetoothGamepadService,
             e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase));
         window.Closing += HandleWindowClosing;
         MainWindow = window;

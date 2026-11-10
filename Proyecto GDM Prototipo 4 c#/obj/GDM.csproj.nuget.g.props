@@ -12,4 +12,10 @@
   <ItemGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
     <SourceRoot Include="C:\Users\User\.nuget\packages\" />
   </ItemGroup>
+  <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <Import Project="$(NuGetPackageRoot)microsoft.windows.cswinrt\3.0.0-preview.260319.2\build\Microsoft.Windows.CsWinRT.props" Condition="Exists('$(NuGetPackageRoot)microsoft.windows.cswinrt\3.0.0-preview.260319.2\build\Microsoft.Windows.CsWinRT.props')" />
+  </ImportGroup>
+  <PropertyGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <PkgMicrosoft_Windows_CsWinRT Condition=" '$(PkgMicrosoft_Windows_CsWinRT)' == '' ">C:\Users\User\.nuget\packages\microsoft.windows.cswinrt\3.0.0-preview.260319.2</PkgMicrosoft_Windows_CsWinRT>
+  </PropertyGroup>
 </Project>

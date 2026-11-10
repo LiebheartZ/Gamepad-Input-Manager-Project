@@ -1,8 +1,10 @@
 <Application x:Class="GDM.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:GDM">
     <Application.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+        <local:ZeroToVisibilityConverter x:Key="ZeroToVisibility" />
         <SolidColorBrush x:Key="WindowBrush" Color="#F4F7FA" />
         <SolidColorBrush x:Key="PanelBrush" Color="#FFFFFF" />
         <SolidColorBrush x:Key="PanelRaisedBrush" Color="#E6EEF5" />

@@ -111,6 +111,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public string SaveButtonText => IsBusy ? "Guardando..." : "Guardar ajustes";
 
+    public AppSettings Settings => _currentSettings;
+
     public string StatusTitle
     {
         get => _statusTitle;
@@ -155,6 +157,18 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         },
         "Se guardaron los ajustes.",
         "Ajustes guardados");
+
+    public Task UpdateBluetoothSettingsAsync(bool showAllDevices, bool enableAutoConnect)
+    {
+        return PersistAsync(
+            _currentSettings with
+            {
+                ShowAllBluetoothDevices = showAllDevices,
+                EnableAutoConnectBluetooth = enableAutoConnect
+            },
+            "Se actualizaron las preferencias de Bluetooth.",
+            "Preferencias de Bluetooth actualizadas");
+    }
 
     public Task RestoreDefaultsAsync()
     {

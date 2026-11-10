@@ -60,6 +60,7 @@ public partial class MainWindow : Window
         IVirtualGamepadService virtualGamepadService,
         ConnectedGamepad? startupVirtualGamepad = null,
         IHidHideService? hidHideService = null,
+        IBluetoothGamepadService? bluetoothGamepadService = null,
         bool startMinimized = false)
     {
         InitializeComponent();
@@ -96,6 +97,7 @@ public partial class MainWindow : Window
             profileRepository: profileRepository,
             virtualGamepadService: virtualGamepadService,
             hidHideService: hidHideService,
+            bluetoothGamepadService: bluetoothGamepadService,
             requestElevatedVirtualGamepad: LaunchElevatedVirtualGamepad,
             confirmDeleteProfile: profile => MessageBox.Show(
                 this,

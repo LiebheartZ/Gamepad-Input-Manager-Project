@@ -1512,3 +1512,6 @@ C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\PhysicalDisc
 C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\PhysicalDisconnectStopTests\GDM.pdb
 C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\PhysicalDisconnectStopTests\Sayers.SDL2.Core.dll
 C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\bin\PhysicalDisconnectStopTests\HIDMaestro.Core.dll
+C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\obj\Debug\Views\BluetoothPairingWindow.g.cs
+C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\obj\Debug\GeneratedInternalTypeHelper.g.cs
+C:\proyectos\input manager proyecto\Proyecto GDM Prototipo 4 c#\obj\Debug\Views\BluetoothPairingWindow.baml

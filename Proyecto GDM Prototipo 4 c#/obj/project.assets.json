@@ -1,7 +1,24 @@
 {
   "version": 4,
   "targets": {
-    "net10.0-windows": {
+    "net10.0-windows10.0.26100.1": {
+      "Microsoft.Windows.CsWinRT/3.0.0-preview.260319.2": {
+        "type": "package",
+        "compile": {
+          "lib/net10.0/WinRT.Runtime.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net10.0/WinRT.Runtime.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "build/Microsoft.Windows.CsWinRT.props": {},
+          "build/Microsoft.Windows.CsWinRT.targets": {}
+        }
+      },
       "Sayers.SDL2.Core/1.0.11": {
         "type": "package",
         "compile": {
@@ -17,6 +34,86 @@
     }
   },
   "libraries": {
+    "Microsoft.Windows.CsWinRT/3.0.0-preview.260319.2": {
+      "sha512": "uIPNu4owbZI/5Z1OGogfstZfCcHLZ5XcbgWyo2Rtz4zr8QOBAqw4ThAWNVx6HXAiwTferioSlMUGoiUq+07HFg==",
+      "type": "package",
+      "path": "microsoft.windows.cswinrt/3.0.0-preview.260319.2",
+      "hasTools": true,
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "LICENSE",
+        "NOTICE.txt",
+        "analyzers/dotnet/cs/WinRT.SourceGenerator2.dll",
+        "build/Microsoft.Windows.CsWinRT.BeforeMicrosoftNetSdk.targets",
+        "build/Microsoft.Windows.CsWinRT.CsWinRTGen.targets",
+        "build/Microsoft.Windows.CsWinRT.props",
+        "build/Microsoft.Windows.CsWinRT.targets",
+        "build/sources/StubExe.c",
+        "hosting/arm64/native/WinRT.Host.dll",
+        "hosting/arm64/native/de-DE/WinRT.Host.dll.mui",
+        "hosting/arm64/native/en-US/WinRT.Host.dll.mui",
+        "hosting/arm64/native/es-ES/WinRT.Host.dll.mui",
+        "hosting/arm64/native/fr-FR/WinRT.Host.dll.mui",
+        "hosting/arm64/native/it-IT/WinRT.Host.dll.mui",
+        "hosting/arm64/native/ja-JP/WinRT.Host.dll.mui",
+        "hosting/arm64/native/ko-KR/WinRT.Host.dll.mui",
+        "hosting/arm64/native/pt-BR/WinRT.Host.dll.mui",
+        "hosting/arm64/native/ru-RU/WinRT.Host.dll.mui",
+        "hosting/arm64/native/zh-CN/WinRT.Host.dll.mui",
+        "hosting/arm64/native/zh-TW/WinRT.Host.dll.mui",
+        "hosting/x64/native/WinRT.Host.dll",
+        "hosting/x64/native/de-DE/WinRT.Host.dll.mui",
+        "hosting/x64/native/en-US/WinRT.Host.dll.mui",
+        "hosting/x64/native/es-ES/WinRT.Host.dll.mui",
+        "hosting/x64/native/fr-FR/WinRT.Host.dll.mui",
+        "hosting/x64/native/it-IT/WinRT.Host.dll.mui",
+        "hosting/x64/native/ja-JP/WinRT.Host.dll.mui",
+        "hosting/x64/native/ko-KR/WinRT.Host.dll.mui",
+        "hosting/x64/native/pt-BR/WinRT.Host.dll.mui",
+        "hosting/x64/native/ru-RU/WinRT.Host.dll.mui",
+        "hosting/x64/native/zh-CN/WinRT.Host.dll.mui",
+        "hosting/x64/native/zh-TW/WinRT.Host.dll.mui",
+        "hosting/x86/native/WinRT.Host.dll",
+        "hosting/x86/native/de-DE/WinRT.Host.dll.mui",
+        "hosting/x86/native/en-US/WinRT.Host.dll.mui",
+        "hosting/x86/native/es-ES/WinRT.Host.dll.mui",
+        "hosting/x86/native/fr-FR/WinRT.Host.dll.mui",
+        "hosting/x86/native/it-IT/WinRT.Host.dll.mui",
+        "hosting/x86/native/ja-JP/WinRT.Host.dll.mui",
+        "hosting/x86/native/ko-KR/WinRT.Host.dll.mui",
+        "hosting/x86/native/pt-BR/WinRT.Host.dll.mui",
+        "hosting/x86/native/ru-RU/WinRT.Host.dll.mui",
+        "hosting/x86/native/zh-CN/WinRT.Host.dll.mui",
+        "hosting/x86/native/zh-TW/WinRT.Host.dll.mui",
+        "impl/net10/17763/WinRT.Sdk.Projection.dll",
+        "impl/net10/17763/WinRT.Sdk.Xaml.Projection.dll",
+        "impl/net10/18362/WinRT.Sdk.Projection.dll",
+        "impl/net10/18362/WinRT.Sdk.Xaml.Projection.dll",
+        "impl/net10/19041/WinRT.Sdk.Projection.dll",
+        "impl/net10/19041/WinRT.Sdk.Xaml.Projection.dll",
+        "impl/net10/22000/WinRT.Sdk.Projection.dll",
+        "impl/net10/22000/WinRT.Sdk.Xaml.Projection.dll",
+        "impl/net10/22621/WinRT.Sdk.Projection.dll",
+        "impl/net10/22621/WinRT.Sdk.Xaml.Projection.dll",
+        "impl/net10/26100/WinRT.Sdk.Projection.dll",
+        "impl/net10/26100/WinRT.Sdk.Xaml.Projection.dll",
+        "lib/net10.0/WinRT.Runtime.dll",
+        "lib/net10.0/WinRT.Runtime.xml",
+        "metadata/WindowsRuntime.Internal.winmd",
+        "microsoft.windows.cswinrt.3.0.0-preview.260319.2.nupkg.sha512",
+        "microsoft.windows.cswinrt.nuspec",
+        "readme.txt",
+        "tools/WinRT.Generator.Tasks.dll",
+        "tools/win-arm64/cswinrtimplgen.exe",
+        "tools/win-arm64/cswinrtinteropgen.exe",
+        "tools/win-arm64/cswinrtprojectiongen.exe",
+        "tools/win-x64/cswinrtimplgen.exe",
+        "tools/win-x64/cswinrtinteropgen.exe",
+        "tools/win-x64/cswinrtprojectiongen.exe",
+        "tools/win-x86/cswinrt.exe"
+      ]
+    },
     "Sayers.SDL2.Core/1.0.11": {
       "sha512": "K/guGaUyRdMhL2FLlUYbqJmKF3h2KtOV7l90NJfLOt/M64zLb4fkWlDGjXCZdHSZGPKsyOjps6FdsambXiLJQQ==",
       "type": "package",
@@ -48,7 +145,8 @@
     }
   },
   "projectFileDependencyGroups": {
-    "net10.0-windows": [
+    "net10.0-windows10.0.26100.1": [
+      "Microsoft.Windows.CsWinRT >= 3.0.0-preview.260319.2",
       "Sayers.SDL2.Core >= 1.0.11"
     ]
   },
@@ -68,15 +166,15 @@
         "C:\\Users\\User\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
-        "net10.0-windows"
+        "net10.0-windows10.0.26100.1"
       ],
       "sources": {
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
-        "net10.0-windows": {
-          "framework": "net10.0-windows7.0",
-          "targetAlias": "net10.0-windows",
+        "net10.0-windows10.0.26100.1": {
+          "framework": "net10.0-windows10.0.26100.1",
+          "targetAlias": "net10.0-windows10.0.26100.1",
           "projectReferences": {}
         }
       },
@@ -93,10 +191,14 @@
       "SdkAnalysisLevel": "10.0.400"
     },
     "frameworks": {
-      "net10.0-windows": {
-        "framework": "net10.0-windows7.0",
-        "targetAlias": "net10.0-windows",
+      "net10.0-windows10.0.26100.1": {
+        "framework": "net10.0-windows10.0.26100.1",
+        "targetAlias": "net10.0-windows10.0.26100.1",
         "dependencies": {
+          "Microsoft.Windows.CsWinRT": {
+            "target": "Package",
+            "version": "[3.0.0-preview.260319.2, )"
+          },
           "Sayers.SDL2.Core": {
             "target": "Package",
             "version": "[1.0.11, )"
@@ -113,8 +215,17 @@
         ],
         "assetTargetFallback": true,
         "warn": true,
+        "downloadDependencies": [
+          {
+            "name": "Microsoft.Windows.SDK.NET.Ref",
+            "version": "[10.0.26100.57, 10.0.26100.57]"
+          }
+        ],
         "frameworkReferences": {
           "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          },
+          "Microsoft.Windows.SDK.NET.Ref.CsWinRT3.Windows": {
             "privateAssets": "all"
           },
           "Microsoft.WindowsDesktop.App": {

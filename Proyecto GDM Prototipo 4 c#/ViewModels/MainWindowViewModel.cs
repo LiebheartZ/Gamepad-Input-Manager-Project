@@ -28,6 +28,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly AsyncParameterCommand _removeSavedControllerCommand;
     private readonly IProfileRepository? _profileRepository;
     private readonly IHidHideService _hidHideService;
+    private readonly IBluetoothGamepadService? _bluetoothGamepadService;
     private readonly Func<ControllerProfile, bool>? _confirmDeleteProfile;
     private readonly System.Threading.Timer? _pollTimer;
     private readonly DispatcherTimer _testerInputTimer;
@@ -55,6 +56,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ICommand RefreshDevicesCommand => _refreshDevicesCommand;
     public ICommand SaveControllerCommand => _saveControllerCommand;
     public ICommand RemoveSavedControllerCommand => _removeSavedControllerCommand;
+    public ICommand OpenBluetoothPairingCommand { get; }
     public ObservableCollection<ConnectedGamepad> ConnectedGamepads { get; } = [];
     public ObservableCollection<ControllerRecord> SavedControllers { get; } = [];
     public ObservableCollection<ControllerListItem> ControllerItems { get; } = [];
@@ -153,7 +155,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         Func<ControllerProfile, bool>? confirmDeleteProfile = null,
         IVirtualGamepadService? virtualGamepadService = null,
         Func<ConnectedGamepad, bool>? requestElevatedVirtualGamepad = null,
-        IHidHideService? hidHideService = null)
+        IHidHideService? hidHideService = null,
+        IBluetoothGamepadService? bluetoothGamepadService = null)
     {
         _gamepadDetectionService = gamepadDetectionService;
         _appLogService = appLogService;
@@ -162,6 +165,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _confirmDeleteProfile = confirmDeleteProfile;
         _confirmRemoveSavedController = confirmRemoveSavedController;
         _settingsViewModel = settingsViewModel;
+        _bluetoothGamepadService = bluetoothGamepadService;
         IGamepadInputService? inputService =
             gamepadInputService ?? gamepadDetectionService as IGamepadInputService;
         _testerViewModel = new TesterViewModel(
@@ -204,6 +208,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 exception));
         Profiles.PropertyChanged += OnProfilesPropertyChanged;
         NavigateCommand = new NavigationCommand(Navigate);
+        OpenBluetoothPairingCommand = new AsyncCommand(() => OpenBluetoothPairingAsync(), () => true);
         _refreshDevicesCommand = new AsyncCommand(
             () => RefreshDevicesAsync(forceRescan: true),
             () => !IsRefreshing && !_isSavingController && !_isRemovingController);
@@ -1336,6 +1341,51 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 $"Serial={device.SerialNumber ?? "(n/d)"}, " +
                 $"Ruta={device.DevicePath ?? "(n/d)"}, GUID={device.SdlGuid ?? "(n/d)"})"));
         return $"SDL2 detectó {devices.Count} mando(s): {descriptions}.";
+    }
+
+    private async Task OpenBluetoothPairingAsync()
+    {
+        if (_bluetoothGamepadService is null)
+        {
+            _appLogService?.Write(
+                DiagnosticLogLevel.Warning,
+                "Bluetooth LE",
+                "El servicio Bluetooth no está disponible.");
+            return;
+        }
+
+        try
+        {
+            bool showAllDevices = _settingsViewModel?.Settings.ShowAllBluetoothDevices ?? false;
+            bool enableAutoConnect = _settingsViewModel?.Settings.EnableAutoConnectBluetooth ?? false;
+
+            var viewModel = new BluetoothPairingViewModel(
+                _bluetoothGamepadService,
+                _appLogService,
+                showAllDevices,
+                enableAutoConnect);
+
+            var window = new Views.BluetoothPairingWindow(viewModel);
+            await viewModel.InitializeAsync();
+            window.ShowDialog();
+
+            if (_settingsViewModel is not null &&
+                (viewModel.ShowAllDevices != showAllDevices ||
+                 viewModel.EnableAutoConnect != enableAutoConnect))
+            {
+                await _settingsViewModel.UpdateBluetoothSettingsAsync(
+                    viewModel.ShowAllDevices,
+                    viewModel.EnableAutoConnect);
+            }
+        }
+        catch (Exception exception)
+        {
+            _appLogService?.Write(
+                DiagnosticLogLevel.Error,
+                "Bluetooth LE",
+                "Error al abrir ventana de emparejamiento",
+                exception);
+        }
     }
 
     public void Dispose()
