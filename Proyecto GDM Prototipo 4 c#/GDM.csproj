@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows10.0.26100.1</TargetFramework>
-    <Version>0.3.0</Version>
-    <AssemblyVersion>0.3.0.0</AssemblyVersion>
-    <FileVersion>0.3.0.0</FileVersion>
-    <InformationalVersion>0.3.0</InformationalVersion>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Version>0.9.0</Version>
+    <AssemblyVersion>0.9.0.0</AssemblyVersion>
+    <FileVersion>0.9.0.0</FileVersion>
+    <InformationalVersion>0.9.0</InformationalVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -16,11 +16,9 @@
     <ApplicationIcon>cover.ico</ApplicationIcon>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Sayers.SDL2.Core" Version="1.0.11" />
-    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="3.0.0-preview.260319.2" />
     <Reference Include="HIDMaestro.Core">
       <HintPath>ThirdParty\HIDMaestro\2.1.0\HIDMaestro.Core.dll</HintPath>
       <Private>true</Private>
@@ -41,7 +39,7 @@
   </ItemGroup>
   <Target Name="CopyUpdatedSdlRuntime" AfterTargets="CopyFilesToOutputDirectory">
     <Copy SourceFiles="ThirdParty\SDL2\2.32.10\SDL2.dll"
-          DestinationFiles="$(OutputPath)SDL2.dll"
+          DestinationFiles="$(OutDir)SDL2.dll"
           SkipUnchangedFiles="true" />
   </Target>
 </Project>

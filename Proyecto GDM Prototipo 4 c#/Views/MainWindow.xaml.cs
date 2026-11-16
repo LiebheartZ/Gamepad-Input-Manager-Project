@@ -60,8 +60,10 @@ public partial class MainWindow : Window
         IVirtualGamepadService virtualGamepadService,
         ConnectedGamepad? startupVirtualGamepad = null,
         IHidHideService? hidHideService = null,
-        IBluetoothGamepadService? bluetoothGamepadService = null,
-        bool startMinimized = false)
+        bool startMinimized = false,
+        Func<string>? defaultVirtualGamepadType = null,
+        Func<bool>? restoreGamepadsOnExit = null,
+        Func<Guid?>? defaultProfileId = null)
     {
         InitializeComponent();
         Width = settings.WindowWidth;
@@ -97,8 +99,10 @@ public partial class MainWindow : Window
             profileRepository: profileRepository,
             virtualGamepadService: virtualGamepadService,
             hidHideService: hidHideService,
-            bluetoothGamepadService: bluetoothGamepadService,
             requestElevatedVirtualGamepad: LaunchElevatedVirtualGamepad,
+            defaultVirtualGamepadType: defaultVirtualGamepadType,
+            restoreGamepadsOnExit: restoreGamepadsOnExit,
+            defaultProfileId: defaultProfileId,
             confirmDeleteProfile: profile => MessageBox.Show(
                 this,
                 $"Se eliminará el perfil «{profile.DisplayName}». Esta acción no se puede deshacer.\n\n¿Deseas continuar?",
@@ -132,6 +136,9 @@ public partial class MainWindow : Window
 
     public Task RestoreHidHideBeforeCloseAsync() =>
         _viewModel.RestoreHidHideBeforeCloseAsync();
+
+    public Task NotifySettingsAppliedAsync(AppSettings previous, AppSettings current) =>
+        _viewModel.HandleSettingsAppliedAsync(previous, current);
 
     public void HideToTray() => Hide();
 

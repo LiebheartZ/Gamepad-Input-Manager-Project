@@ -217,10 +217,18 @@ public sealed class JsonProfileRepository : IProfileRepository
             throw new InvalidDataException("La descripción del perfil no puede superar 500 caracteres.");
         }
 
+        if (profile.VirtualGamepadType is null ||
+            !VirtualGamepadTypes.IsSupported(profile.VirtualGamepadType))
+        {
+            throw new InvalidDataException(
+                "El tipo de mando virtual del perfil no es compatible.");
+        }
+
         if (profile.ButtonMappings is null ||
             profile.AxisMappings is null ||
             profile.AxisInversions is null ||
             profile.DeadZones is null ||
+            profile.Combos is null ||
             profile.ButtonMappings.Any(pair =>
                 string.IsNullOrWhiteSpace(pair.Key) || string.IsNullOrWhiteSpace(pair.Value)) ||
             profile.AxisMappings.Any(pair =>
@@ -232,6 +240,21 @@ public sealed class JsonProfileRepository : IProfileRepository
                 pair.Value is < 0 or > 1))
         {
             throw new InvalidDataException("El perfil contiene asignaciones o zonas muertas no válidas.");
+        }
+
+        if (profile.Combos.Any(combo =>
+                combo is null ||
+                combo.ComboId == Guid.Empty ||
+                combo.DisplayName is null ||
+                combo.DisplayName.Length > 80 ||
+                combo.Buttons is null ||
+                combo.TargetButtons is null ||
+                combo.Buttons.Any(string.IsNullOrWhiteSpace) ||
+                combo.TargetButtons.Any(string.IsNullOrWhiteSpace) ||
+                !ComboActionTypes.IsSupported(combo.ActionType) ||
+                combo.HoldMilliseconds is < 0 or > 10000))
+        {
+            throw new InvalidDataException("El perfil contiene combos no válidos.");
         }
     }
 

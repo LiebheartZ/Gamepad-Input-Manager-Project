@@ -54,6 +54,18 @@ public sealed class JsonAppSettingsRepository : IAppSettingsRepository
                 "El tema de la aplicación debe ser System, Light o Dark.");
         }
 
+        if (!VirtualGamepadTypes.IsSupported(settings.DefaultVirtualGamepadType))
+        {
+            throw new InvalidDataException(
+                "El tipo de mando virtual predeterminado no es compatible.");
+        }
+
+        if (settings.DefaultProfileId == Guid.Empty)
+        {
+            throw new InvalidDataException(
+                "El perfil predeterminado no es válido.");
+        }
+
         if (string.IsNullOrWhiteSpace(settings.Language))
         {
             throw new InvalidDataException("El idioma de la aplicación no puede estar vacío.");

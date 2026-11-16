@@ -10,6 +10,8 @@ public sealed record ConnectedGamepad
     public string? DevicePath { get; init; }
     public string? SdlGuid { get; init; }
     public bool IsHiddenByGdm { get; init; }
+    public bool IsVirtualGamepad { get; init; }
+    public string? VirtualLabel => IsVirtualGamepad ? "Mando virtual" : null;
     public string HardwareIdLabel =>
         VendorId is ushort vendorId && ProductId is ushort productId
             ? $"VID: {vendorId:X4} · PID: {productId:X4}"

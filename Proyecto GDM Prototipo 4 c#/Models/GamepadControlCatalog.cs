@@ -34,6 +34,35 @@ public static class GamepadControlCatalog
     public static IReadOnlyList<GamepadControlOption> ButtonTargets { get; } =
         [NoButtonTarget, .. Buttons];
 
+    private static readonly HashSet<string> Xbox360UnsupportedTargets = new(StringComparer.Ordinal)
+    {
+        "touchpad", "misc1", "paddle1", "paddle2", "paddle3", "paddle4"
+    };
+
+    private static readonly HashSet<string> DualShock4UnsupportedTargets = new(StringComparer.Ordinal)
+    {
+        "misc1", "paddle1", "paddle2", "paddle3", "paddle4"
+    };
+
+    public static IReadOnlyList<GamepadControlOption> GetButtonTargetsFor(string? virtualGamepadType) =>
+        [.. ButtonTargets.Where(option => IsButtonTargetSupported(option.Id, virtualGamepadType))];
+
+    public static bool IsButtonTargetSupported(string targetId, string? virtualGamepadType)
+    {
+        if (targetId == NoButtonTarget.Id || virtualGamepadType is null)
+        {
+            return true;
+        }
+
+        HashSet<string>? unsupported = virtualGamepadType switch
+        {
+            VirtualGamepadTypes.Xbox360 => Xbox360UnsupportedTargets,
+            VirtualGamepadTypes.DualShock4 => DualShock4UnsupportedTargets,
+            _ => null
+        };
+        return unsupported?.Contains(targetId) != true;
+    }
+
     public static IReadOnlyList<GamepadControlOption> Axes { get; } =
     [
         new("leftX", "Stick izquierdo X", "Stick izq. X"),

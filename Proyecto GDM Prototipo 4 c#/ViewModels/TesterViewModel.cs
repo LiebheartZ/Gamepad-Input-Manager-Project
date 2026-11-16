@@ -13,6 +13,7 @@ public sealed class TesterViewModel : INotifyPropertyChanged
     private readonly IGamepadInputService? _inputService;
     private readonly IVirtualGamepadService? _virtualGamepadService;
     private readonly Func<ConnectedGamepad, bool>? _requestElevatedVirtualGamepad;
+    private readonly Func<string>? _defaultVirtualGamepadType;
     private readonly Action<string>? _logInputError;
     private readonly AsyncCommand _selectDeviceCommand;
     private readonly AsyncCommand _startVirtualGamepadCommand;
@@ -194,11 +195,13 @@ public sealed class TesterViewModel : INotifyPropertyChanged
         IGamepadInputService? inputService,
         Action<string>? logInputError = null,
         IVirtualGamepadService? virtualGamepadService = null,
-        Func<ConnectedGamepad, bool>? requestElevatedVirtualGamepad = null)
+        Func<ConnectedGamepad, bool>? requestElevatedVirtualGamepad = null,
+        Func<string>? defaultVirtualGamepadType = null)
     {
         _inputService = inputService;
         _virtualGamepadService = virtualGamepadService;
         _requestElevatedVirtualGamepad = requestElevatedVirtualGamepad;
+        _defaultVirtualGamepadType = defaultVirtualGamepadType;
         _logInputError = logInputError;
         if (_inputService is null)
         {
@@ -316,6 +319,12 @@ public sealed class TesterViewModel : INotifyPropertyChanged
             return;
         }
 
+        if (device.IsVirtualGamepad)
+        {
+            VirtualGamepadStatus = "No se puede usar un mando virtual como fuente de otra salida virtual.";
+            return;
+        }
+
         if (_inputService is null)
         {
             VirtualGamepadStatus = "No se puede iniciar: la lectura de entradas SDL no está disponible.";
@@ -354,8 +363,11 @@ public sealed class TesterViewModel : INotifyPropertyChanged
                 return;
             }
 
-            await _virtualGamepadService.StartAsync(device);
-            UpdateVirtualGamepadState("Mando virtual Xbox 360 activo. El mando físico sigue conectado.");
+            string virtualGamepadType = VirtualGamepadTypes.Normalize(
+                _defaultVirtualGamepadType?.Invoke());
+            await _virtualGamepadService.StartAsync(device, virtualGamepadType);
+            UpdateVirtualGamepadState(
+                $"Mando virtual {VirtualGamepadTypes.DisplayName(virtualGamepadType)} activo. El mando físico sigue conectado.");
         }
         catch (DllNotFoundException exception)
         {

@@ -11,20 +11,23 @@ public sealed record ControllerListItem(
     public string HardwareIdLabel =>
         ConnectedDevice?.HardwareIdLabel ?? GetSavedHardwareIdLabel(SavedRecord!);
 
-    public string ConnectionText => ConnectedDevice?.IsHiddenByGdm == true
-        ? SavedRecord is null
-            ? "Oculto por GDM"
-            : "Oculto por GDM · Guardado"
-        : SavedRecord is null
-            ? "Conectado"
-            : ConnectedDevice is null
-                ? "Desconectado · Guardado"
-                : "Conectado · Guardado";
+    public string ConnectionText => ConnectedDevice?.IsVirtualGamepad == true
+        ? "Mando virtual"
+        : ConnectedDevice?.IsHiddenByGdm == true
+            ? SavedRecord is null
+                ? "Oculto por GDM"
+                : "Oculto por GDM · Guardado"
+            : SavedRecord is null
+                ? "Conectado"
+                : ConnectedDevice is null
+                    ? "Desconectado · Guardado"
+                    : "Conectado · Guardado";
 
     public string? DeviceKey => ConnectedDevice?.DeviceKey;
     public bool IsConnected => ConnectedDevice is not null;
+    public bool IsVirtualGamepad => ConnectedDevice?.IsVirtualGamepad == true;
     public bool CanSave =>
-        ConnectedDevice is { IsHiddenByGdm: false } && SavedRecord is null;
+        ConnectedDevice is { IsHiddenByGdm: false, IsVirtualGamepad: false } && SavedRecord is null;
     public bool CanRemoveSaved => SavedRecord is not null;
 
     private static string GetSavedHardwareIdLabel(ControllerRecord record)

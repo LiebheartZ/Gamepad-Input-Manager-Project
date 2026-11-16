@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using GDM.Models;
+using GDM.Services;
 using GDM.Services.Abstractions;
 
 namespace GDM.ViewModels;
@@ -22,11 +24,14 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     private readonly Func<ConnectedGamepad, Task<bool>>? _hidePhysicalDevice;
     private readonly Func<ConnectedGamepad, Task<bool>>? _showPhysicalDevice;
     private readonly Func<ConnectedGamepad, bool>? _isPhysicalDevicePresent;
+    private readonly Func<string>? _defaultVirtualGamepadType;
+    private readonly Func<bool>? _restoreGamepadsOnExit;
     private readonly AsyncCommand _createCommand;
     private readonly AsyncCommand _saveCommand;
     private readonly AsyncCommand _duplicateCommand;
     private readonly AsyncCommand _deleteCommand;
     private readonly AsyncCommand _assignCommand;
+    private readonly GamepadComboEvaluator _comboEvaluator = new();
     private ControllerListItem[] _connectedControllerItems = [];
     private readonly Dictionary<Guid, string> _autoStartAttempts = [];
     private readonly List<Task> _startupAutoStartTasks = [];
@@ -39,9 +44,11 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     private readonly Dictionary<Guid, string> _lastRebindDiagnostics = [];
     private ControllerProfile? _selectedProfile;
     private ControllerRecord? _selectedController;
+    private VirtualGamepadControllerViewModel? _selectedVirtualGamepad;
     private ProfileChoice? _selectedAssignmentProfile;
     private string _draftName = string.Empty;
     private string _draftDescription = string.Empty;
+    private string _draftVirtualGamepadType = VirtualGamepadTypes.Default;
     private double _leftStickDeadZone;
     private double _rightStickDeadZone;
     private string _statusMessage = "Los perfiles aún no se han cargado.";
@@ -59,12 +66,18 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     public ObservableCollection<ProfileChoice> AssignmentChoices { get; } = [];
     public ObservableCollection<ProfileMappingRow> ButtonMappingRows { get; } = [];
     public ObservableCollection<ProfileMappingRow> AxisMappingRows { get; } = [];
+    public ObservableCollection<ProfileComboRow> ComboRows { get; } = [];
+    public IReadOnlyList<VirtualGamepadTypeOption> VirtualGamepadTypeOptions { get; } =
+        VirtualGamepadTypes.Options;
+
     public ObservableCollection<VirtualGamepadControllerViewModel> VirtualGamepads { get; } = [];
     public ICommand CreateCommand => _createCommand;
     public ICommand SaveCommand => _saveCommand;
     public ICommand DuplicateCommand => _duplicateCommand;
     public ICommand DeleteCommand => _deleteCommand;
     public ICommand AssignCommand => _assignCommand;
+    public ICommand AddComboCommand { get; }
+    public ICommand RemoveComboCommand { get; }
     public bool IsBusy
     {
         get => _isBusy;
@@ -100,6 +113,18 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         set => SetProperty(ref _draftDescription, value);
     }
 
+    public string DraftVirtualGamepadType
+    {
+        get => _draftVirtualGamepadType;
+        set
+        {
+            if (SetProperty(ref _draftVirtualGamepadType, value))
+            {
+                RefreshButtonMappingTargets();
+            }
+        }
+    }
+
     public double LeftStickDeadZone
     {
         get => _leftStickDeadZone;
@@ -130,6 +155,10 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
 
             DraftName = value?.DisplayName ?? string.Empty;
             DraftDescription = value?.Description ?? string.Empty;
+            DraftVirtualGamepadType = value?.VirtualGamepadType is { } type &&
+                                      VirtualGamepadTypes.IsSupported(type)
+                ? type
+                : ResolveDefaultVirtualGamepadType();
             LoadMappingRows(value);
             NotifyCommandsCanExecuteChanged();
         }
@@ -157,10 +186,35 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         {
             if (SetProperty(ref _selectedAssignmentProfile, value))
             {
+                if (value?.ProfileId is Guid profileId)
+                {
+                    ControllerProfile? match = Profiles.FirstOrDefault(
+                        profile => profile.ProfileId == profileId);
+                    if (match is not null)
+                    {
+                        SelectedProfile = match;
+                    }
+                }
+
                 _assignCommand.NotifyCanExecuteChanged();
             }
         }
     }
+
+    public VirtualGamepadControllerViewModel? SelectedVirtualGamepad
+    {
+        get => _selectedVirtualGamepad;
+        set
+        {
+            if (SetProperty(ref _selectedVirtualGamepad, value))
+            {
+                SelectedController = value?.Record;
+            }
+        }
+    }
+
+    public bool HasVirtualGamepads => VirtualGamepads.Count > 0;
+    public bool ShowNoVirtualGamepads => VirtualGamepads.Count == 0;
 
     public ProfilesViewModel(
         IProfileRepository? profileRepository,
@@ -174,7 +228,9 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         Func<ConnectedGamepad, Task<bool>>? hidePhysicalDevice = null,
         Func<ConnectedGamepad, Task<bool>>? showPhysicalDevice = null,
         Func<ConnectedGamepad, bool>? isPhysicalDevicePresent = null,
-        Action<DiagnosticLogLevel, string, Exception?>? writeDiagnostic = null)
+        Action<DiagnosticLogLevel, string, Exception?>? writeDiagnostic = null,
+        Func<string>? defaultVirtualGamepadType = null,
+        Func<bool>? restoreGamepadsOnExit = null)
     {
         _profileRepository = profileRepository;
         _controllerRepository = controllerRepository;
@@ -188,6 +244,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         _hidePhysicalDevice = hidePhysicalDevice;
         _showPhysicalDevice = showPhysicalDevice;
         _isPhysicalDevicePresent = isPhysicalDevicePresent;
+        _defaultVirtualGamepadType = defaultVirtualGamepadType;
+        _restoreGamepadsOnExit = restoreGamepadsOnExit;
         _createCommand = new AsyncCommand(CreateAsync, () => CanEditProfiles);
         _saveCommand = new AsyncCommand(SaveAsync, () =>
             CanEditProfiles && SelectedProfile is not null &&
@@ -199,6 +257,24 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         _assignCommand = new AsyncCommand(AssignAsync, () =>
             !IsBusy && _controllerRepository is not null &&
             SelectedController is not null && SelectedAssignmentProfile is not null);
+        AddComboCommand = new ParameterCommand(_ =>
+        {
+            ComboRows.Add(new ProfileComboRow(
+                Guid.NewGuid(),
+                string.Empty,
+                [],
+                requiresHold: false,
+                holdMilliseconds: 0,
+                ComboActionTypes.Buttons,
+                []));
+        });
+        RemoveComboCommand = new ParameterCommand(parameter =>
+        {
+            if (parameter is ProfileComboRow row)
+            {
+                ComboRows.Remove(row);
+            }
+        });
         RebuildAssignmentChoices();
     }
 
@@ -279,7 +355,12 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 {
                     await RestoreAutoHiddenDeviceAsync(device);
                     item.SetStatus("La salida virtual está detenida.");
-                    item.Update(item.Record, device, item.ProfileName, isRunning: false);
+                    item.Update(
+                        item.Record,
+                        device,
+                        item.ProfileName,
+                        isRunning: false,
+                        ResolveVirtualGamepadType(item.Record));
                     NotifyVirtualOutputStateChanged();
                 }
 
@@ -298,11 +379,17 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                         if (await ConfirmPhysicalDisconnectAsync(device))
                         {
                             await _virtualGamepadService.StopAsync(device.DeviceKey, cancellationToken);
+                            _comboEvaluator.Reset(device.DeviceKey);
                             await RestoreAutoHiddenDeviceAsync(device);
                             _autoHiddenPresenceStates.Remove(device.DeviceKey);
                             _hiddenInputUnavailableStates.Remove(device.DeviceKey);
                             item.SetStatus("La salida virtual se detuvo porque se desconectó el mando físico.");
-                            item.Update(item.Record, null, item.ProfileName, isRunning: false);
+                            item.Update(
+                                item.Record,
+                                null,
+                                item.ProfileName,
+                                isRunning: false,
+                                ResolveVirtualGamepadType(item.Record));
                             NotifyVirtualOutputStateChanged();
                             continue;
                         }
@@ -336,16 +423,31 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
 
                     _hiddenInputUnavailableStates.Remove(device.DeviceKey);
                     await _virtualGamepadService.StopAsync(device.DeviceKey, cancellationToken);
+                    _comboEvaluator.Reset(device.DeviceKey);
                     await RestoreAutoHiddenDeviceAsync(device);
                     item.SetStatus("La salida se detuvo porque se desconectó el mando físico.");
-                    item.Update(item.Record, null, item.ProfileName, isRunning: false);
+                    item.Update(
+                        item.Record,
+                        null,
+                        item.ProfileName,
+                        isRunning: false,
+                        ResolveVirtualGamepadType(item.Record));
                     NotifyVirtualOutputStateChanged();
                     continue;
                 }
 
                 ControllerProfile? profile = FindAssignedProfile(item.Record);
                 _hiddenInputUnavailableStates.Remove(device.DeviceKey);
-                _virtualGamepadService.SubmitInputSnapshot(device, snapshot, profile);
+                ComboEvaluation comboEvaluation = _comboEvaluator.Evaluate(
+                    device.DeviceKey,
+                    snapshot,
+                    profile?.Combos);
+                _virtualGamepadService.SubmitInputSnapshot(
+                    device,
+                    snapshot,
+                    profile,
+                    GetComboTargetButtons(comboEvaluation));
+                await ApplyComboActionsAsync(item, device, snapshot, profile, comboEvaluation);
             }
             catch (Exception exception) when (
                 exception is DllNotFoundException or
@@ -368,11 +470,69 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 item.SetStatus($"No se pudo actualizar su salida virtual: {exception.Message}");
                 _reportError?.Invoke(item.StatusMessage, exception);
                 await _virtualGamepadService.StopAsync(device.DeviceKey, cancellationToken);
+                _comboEvaluator.Reset(device.DeviceKey);
                 await RestoreAutoHiddenDeviceAsync(device);
-                item.Update(item.Record, item.ConnectedDevice, item.ProfileName, isRunning: false);
+                item.Update(
+                    item.Record,
+                    item.ConnectedDevice,
+                    item.ProfileName,
+                    isRunning: false,
+                    ResolveVirtualGamepadType(item.Record));
                 NotifyVirtualOutputStateChanged();
             }
         }
+    }
+
+    public const string BuiltinProfileName = "Predeterminado";
+
+    public async Task<ControllerProfile?> EnsureBuiltinProfileAsync()
+    {
+        if (_profileRepository is null || !_isInitialized || IsBusy)
+        {
+            return null;
+        }
+
+        if (Profiles.Any(profile =>
+                string.Equals(
+                    profile.DisplayName,
+                    BuiltinProfileName,
+                    StringComparison.OrdinalIgnoreCase)))
+        {
+            return null;
+        }
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        var profile = new ControllerProfile
+        {
+            ProfileId = Guid.NewGuid(),
+            DisplayName = BuiltinProfileName,
+            Description = "Perfil creado automáticamente por GDM. Puedes modificarlo como cualquier otro perfil.",
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
+        };
+
+        try
+        {
+            await _profileRepository.SaveAsync(profile);
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException or
+            InvalidOperationException or
+            IOException or
+            UnauthorizedAccessException)
+        {
+            ReportFailure("No se pudo crear el perfil predeterminado.", exception);
+            return null;
+        }
+
+        int insertAt = Profiles.TakeWhile(candidate =>
+            string.Compare(
+                candidate.DisplayName,
+                profile.DisplayName,
+                StringComparison.CurrentCultureIgnoreCase) < 0).Count();
+        Profiles.Insert(insertAt, profile);
+        RebuildAssignmentChoices();
+        return profile;
     }
 
     public async Task CompleteStartupAsync(CancellationToken cancellationToken = default)
@@ -503,6 +663,9 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         {
             ProfileId = Guid.NewGuid(),
             DisplayName = name,
+            VirtualGamepadType = VirtualGamepadTypes.IsSupported(DraftVirtualGamepadType)
+                ? DraftVirtualGamepadType
+                : ResolveDefaultVirtualGamepadType(),
             CreatedAtUtc = now,
             UpdatedAtUtc = now
         };
@@ -531,6 +694,12 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             return;
         }
 
+        if (!TryCreateCombos(out List<ControllerCombo> combos, out string? comboError))
+        {
+            StatusMessage = comboError ?? "No se pudieron validar los combos del perfil.";
+            return;
+        }
+
         IsBusy = true;
         try
         {
@@ -551,6 +720,10 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                     selected.DeadZones,
                     LeftStickDeadZone,
                     RightStickDeadZone),
+                VirtualGamepadType = VirtualGamepadTypes.IsSupported(DraftVirtualGamepadType)
+                    ? DraftVirtualGamepadType
+                    : selected.VirtualGamepadType,
+                Combos = combos,
                 UpdatedAtUtc = DateTimeOffset.UtcNow
             };
             await _profileRepository.SaveAsync(updated);
@@ -561,6 +734,14 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             }
 
             RebuildAssignmentChoices();
+            if (!string.Equals(
+                    selected.VirtualGamepadType,
+                    updated.VirtualGamepadType,
+                    StringComparison.Ordinal))
+            {
+                await RestartVirtualGamepadsForProfileAsync(updated.ProfileId);
+            }
+
             StatusMessage = "Perfil guardado.";
         }
         catch (InvalidDataException exception)
@@ -600,7 +781,13 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             UpdatedAtUtc = DateTimeOffset.UtcNow,
             ButtonMappings = new Dictionary<string, string>(selected.ButtonMappings),
             AxisMappings = new Dictionary<string, string>(selected.AxisMappings),
-            DeadZones = new Dictionary<string, double>(selected.DeadZones)
+            DeadZones = new Dictionary<string, double>(selected.DeadZones),
+            Combos = selected.Combos.Select(combo => combo with
+            {
+                ComboId = Guid.NewGuid(),
+                Buttons = [.. combo.Buttons],
+                TargetButtons = [.. combo.TargetButtons]
+            }).ToList()
         };
         await SaveNewProfileAsync(duplicate, "Perfil duplicado.");
     }
@@ -821,7 +1008,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 : source.Id;
             ButtonMappingRows.Add(new ProfileMappingRow(
                 source,
-                GamepadControlCatalog.ButtonTargets,
+                GamepadControlCatalog.GetButtonTargetsFor(DraftVirtualGamepadType),
                 target));
         }
 
@@ -841,6 +1028,128 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
 
         LeftStickDeadZone = profile?.DeadZones.GetValueOrDefault("leftStick") ?? 0d;
         RightStickDeadZone = profile?.DeadZones.GetValueOrDefault("rightStick") ?? 0d;
+
+        ComboRows.Clear();
+        foreach (ControllerCombo combo in profile?.Combos ?? [])
+        {
+            ComboRows.Add(new ProfileComboRow(
+                combo.ComboId,
+                combo.DisplayName,
+                combo.Buttons,
+                combo.RequiresHold,
+                combo.HoldMilliseconds,
+                combo.ActionType,
+                combo.TargetButtons));
+        }
+    }
+
+    private void RefreshButtonMappingTargets()
+    {
+        IReadOnlyList<GamepadControlOption> targets =
+            GamepadControlCatalog.GetButtonTargetsFor(DraftVirtualGamepadType);
+        foreach (ProfileComboRow row in ComboRows)
+        {
+            row.RebuildTargetButtons(targets);
+        }
+
+        foreach (ProfileMappingRow row in ButtonMappingRows)
+        {
+            row.Targets.Clear();
+            foreach (GamepadControlOption target in targets)
+            {
+                row.Targets.Add(target);
+            }
+
+            if (targets.Any(target => target.Id == row.SelectedTargetId))
+            {
+                continue;
+            }
+
+            GamepadControlOption? current = GamepadControlCatalog.ButtonTargets
+                .FirstOrDefault(target => target.Id == row.SelectedTargetId);
+            if (current is not null)
+            {
+                row.Targets.Add(new GamepadControlOption(
+                    current.Id,
+                    $"{current.DisplayName} (no compatible)"));
+            }
+        }
+    }
+
+    private string ResolveDefaultVirtualGamepadType()
+    {
+        string? defaultType = _defaultVirtualGamepadType?.Invoke();
+        return VirtualGamepadTypes.IsSupported(defaultType)
+            ? defaultType!
+            : VirtualGamepadTypes.Default;
+    }
+
+    private string ResolveVirtualGamepadType(ControllerRecord record)
+    {
+        string? profileType = FindAssignedProfile(record)?.VirtualGamepadType;
+        return VirtualGamepadTypes.IsSupported(profileType)
+            ? profileType!
+            : ResolveDefaultVirtualGamepadType();
+    }
+
+    private bool TryCreateCombos(out List<ControllerCombo> combos, out string? error)
+    {
+        combos = [];
+        error = null;
+        int index = 0;
+        foreach (ProfileComboRow row in ComboRows)
+        {
+            index++;
+            string comboName = string.IsNullOrWhiteSpace(row.DisplayName)
+                ? $"Combo {index}"
+                : row.DisplayName.Trim();
+            IReadOnlyList<string> triggers = row.SelectedTriggerButtonIds;
+            if (triggers.Count == 0)
+            {
+                error = $"El combo «{comboName}» no tiene botones activadores seleccionados.";
+                return false;
+            }
+
+            int holdMilliseconds = 0;
+            if (row.RequiresHold)
+            {
+                if (!int.TryParse(
+                        row.HoldMilliseconds,
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out holdMilliseconds) ||
+                    holdMilliseconds is < 1 or > 10000)
+                {
+                    error = $"El combo «{comboName}» debe mantener los botones entre 1 y 10000 ms.";
+                    return false;
+                }
+            }
+
+            string actionType = ComboActionTypes.Normalize(row.ActionType);
+            List<string> targetButtons = actionType == ComboActionTypes.Buttons
+                ? row.SelectedTargetButtonIds
+                    .Where(id => GamepadControlCatalog.Buttons.Any(button => button.Id == id))
+                    .ToList()
+                : [];
+            if (actionType == ComboActionTypes.Buttons && targetButtons.Count == 0)
+            {
+                error = $"El combo «{comboName}» no tiene botones de salida seleccionados.";
+                return false;
+            }
+
+            combos.Add(new ControllerCombo
+            {
+                ComboId = row.ComboId == Guid.Empty ? Guid.NewGuid() : row.ComboId,
+                DisplayName = comboName,
+                Buttons = [.. triggers],
+                RequiresHold = row.RequiresHold,
+                HoldMilliseconds = holdMilliseconds,
+                ActionType = actionType,
+                TargetButtons = targetButtons
+            });
+        }
+
+        return true;
     }
 
     private static Dictionary<string, string> CreateMappingDictionary(
@@ -1033,7 +1342,12 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             }
 
             string profileName = FindAssignedProfile(record)?.DisplayName ?? "Sin perfil";
-            output.Update(record, connectedDevice, profileName, running);
+            output.Update(
+                record,
+                connectedDevice,
+                profileName,
+                running,
+                ResolveVirtualGamepadType(record));
             if (_isInitialized &&
                 _controllersLoaded &&
                 record.Settings.AutoStartVirtualGamepad &&
@@ -1051,6 +1365,17 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 _autoStartAttempts.Remove(record.ControllerId);
             }
         }
+
+        VirtualGamepadControllerViewModel? desiredSelection = VirtualGamepads.FirstOrDefault(
+                item => item.Record.ControllerId == SelectedController?.ControllerId) ??
+            VirtualGamepads.FirstOrDefault();
+        if (!ReferenceEquals(_selectedVirtualGamepad, desiredSelection))
+        {
+            SelectedVirtualGamepad = desiredSelection;
+        }
+
+        OnPropertyChanged(nameof(HasVirtualGamepads));
+        OnPropertyChanged(nameof(ShowNoVirtualGamepads));
     }
 
     private static bool IsSamePhysicalDevice(
@@ -1146,13 +1471,24 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             }
 
             ControllerProfile? profile = FindAssignedProfile(item.Record);
-            await _virtualGamepadService.StartAsync(device, snapshot, profile);
+            string virtualGamepadType = ResolveVirtualGamepadType(item.Record);
+            await _virtualGamepadService.StartAsync(
+                device,
+                snapshot,
+                profile,
+                virtualGamepadType);
             WriteAutoHideDiagnostic(
                 DiagnosticLogLevel.Information,
                 $"Salida virtual iniciada. Controlador={item.Record.ControllerId}; mando={DescribeDevice(device)}; " +
                 $"mapeoEstandar={snapshot.IsStandardGameController}; ejes={snapshot.Axes.Count}; botones={snapshot.Buttons.Count}.");
-            item.SetStatus("Mando virtual Xbox 360 activo.");
-            item.Update(item.Record, device, profile?.DisplayName ?? "Sin perfil", isRunning: true);
+            item.SetStatus(
+                $"Mando virtual {VirtualGamepadTypes.DisplayName(virtualGamepadType)} activo.");
+            item.Update(
+                item.Record,
+                device,
+                profile?.DisplayName ?? "Sin perfil",
+                isRunning: true,
+                virtualGamepadType);
             NotifyVirtualOutputStateChanged();
             if (item.Record.Settings.AutoHidePhysicalGamepad)
             {
@@ -1195,6 +1531,43 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task RestartVirtualGamepadsForProfileAsync(Guid profileId)
+    {
+        foreach (VirtualGamepadControllerViewModel item in VirtualGamepads
+                     .Where(candidate => candidate.Record.ProfileId == profileId)
+                     .ToArray())
+        {
+            await RestartVirtualGamepadIfRunningAsync(item);
+        }
+    }
+
+    public async Task RestartVirtualGamepadsForDefaultTypeAsync()
+    {
+        foreach (VirtualGamepadControllerViewModel item in VirtualGamepads
+                     .Where(candidate => FindAssignedProfile(candidate.Record) is null)
+                     .ToArray())
+        {
+            await RestartVirtualGamepadIfRunningAsync(item);
+        }
+    }
+
+    private async Task RestartVirtualGamepadIfRunningAsync(VirtualGamepadControllerViewModel item)
+    {
+        if (_virtualGamepadService is null ||
+            item.ConnectedDevice is not { } device ||
+            !_virtualGamepadService.IsRunningFor(device.DeviceKey))
+        {
+            return;
+        }
+
+        await StopVirtualGamepadAsync(item);
+        if (item.ConnectedDevice?.DeviceKey == device.DeviceKey &&
+            !_virtualGamepadService.IsRunningFor(device.DeviceKey))
+        {
+            await StartVirtualGamepadAsync(item);
+        }
+    }
+
     private async Task StopVirtualGamepadAsync(VirtualGamepadControllerViewModel item)
     {
         if (_virtualGamepadService is null ||
@@ -1208,10 +1581,16 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         try
         {
             await _virtualGamepadService.StopAsync(device.DeviceKey);
+            _comboEvaluator.Reset(device.DeviceKey);
             await RestoreAutoHiddenDeviceAsync(device);
 
             item.SetStatus("La salida virtual de este mando está detenida.");
-            item.Update(item.Record, item.ConnectedDevice, item.ProfileName, isRunning: false);
+            item.Update(
+                item.Record,
+                item.ConnectedDevice,
+                item.ProfileName,
+                isRunning: false,
+                ResolveVirtualGamepadType(item.Record));
             NotifyVirtualOutputStateChanged();
         }
         catch (Exception exception) when (
@@ -1226,6 +1605,121 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         finally
         {
             item.SetStarting(false);
+        }
+    }
+
+    private static IReadOnlyCollection<string> GetComboTargetButtons(ComboEvaluation evaluation)
+    {
+        var targets = new HashSet<string>(StringComparer.Ordinal);
+        foreach (ControllerCombo combo in evaluation.TriggeredCombos)
+        {
+            if (combo.ActionType != ComboActionTypes.Buttons)
+            {
+                continue;
+            }
+
+            foreach (string target in combo.TargetButtons)
+            {
+                if (GamepadControlCatalog.Buttons.Any(button => button.Id == target))
+                {
+                    targets.Add(target);
+                }
+            }
+        }
+
+        return targets;
+    }
+
+    private async Task ApplyComboActionsAsync(
+        VirtualGamepadControllerViewModel item,
+        ConnectedGamepad device,
+        GamepadInputSnapshot snapshot,
+        ControllerProfile? profile,
+        ComboEvaluation evaluation)
+    {
+        if (_virtualGamepadService is null || evaluation.TriggeredCombos.Count == 0)
+        {
+            return;
+        }
+
+        foreach (ControllerCombo combo in evaluation.TriggeredCombos)
+        {
+            if (combo.ActionType == ComboActionTypes.StopOutput)
+            {
+                item.SetStatus($"Combo «{combo.DisplayName}»: se detuvo la salida virtual.");
+                await StopVirtualGamepadAsync(item);
+                return;
+            }
+
+            if (combo.ActionType == ComboActionTypes.SwitchType)
+            {
+                await SwitchVirtualGamepadTypeAsync(item, device, snapshot, profile, combo);
+                return;
+            }
+        }
+    }
+
+    private async Task SwitchVirtualGamepadTypeAsync(
+        VirtualGamepadControllerViewModel item,
+        ConnectedGamepad device,
+        GamepadInputSnapshot snapshot,
+        ControllerProfile? profile,
+        ControllerCombo combo)
+    {
+        IVirtualGamepadService? service = _virtualGamepadService;
+        string? currentType = service?.GetRunningVirtualGamepadType(device.DeviceKey);
+        if (service is null || currentType is null)
+        {
+            return;
+        }
+
+        string newType = VirtualGamepadTypes.Other(currentType);
+        try
+        {
+            await service.StopAsync(device.DeviceKey);
+            await service.StartAsync(device, snapshot, profile, newType);
+            item.SetStatus(
+                $"Combo «{combo.DisplayName}»: mando virtual {VirtualGamepadTypes.DisplayName(newType)} activo.");
+            item.Update(
+                item.Record,
+                device,
+                profile?.DisplayName ?? "Sin perfil",
+                isRunning: true,
+                newType);
+            NotifyVirtualOutputStateChanged();
+        }
+        catch (Exception exception) when (
+            exception is DllNotFoundException or
+            BadImageFormatException or
+            EntryPointNotFoundException or
+            InvalidOperationException or
+            IOException or
+            System.ComponentModel.Win32Exception or
+            UnauthorizedAccessException)
+        {
+            item.SetStatus(
+                $"Combo «{combo.DisplayName}»: no se pudo cambiar el tipo de mando virtual: {exception.Message}");
+            _reportError?.Invoke(item.StatusMessage, exception);
+            try
+            {
+                await service.StartAsync(device, snapshot, profile, currentType);
+                item.Update(
+                    item.Record,
+                    device,
+                    profile?.DisplayName ?? "Sin perfil",
+                    isRunning: true,
+                    currentType);
+                NotifyVirtualOutputStateChanged();
+            }
+            catch (Exception restartException) when (
+                restartException is InvalidOperationException or
+                IOException or
+                System.ComponentModel.Win32Exception or
+                UnauthorizedAccessException)
+            {
+                item.SetStatus(
+                    $"Combo «{combo.DisplayName}»: la salida virtual no pudo reiniciarse: {restartException.Message}");
+            }
         }
     }
 
@@ -1394,15 +1888,18 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         }
     }
 
-    public IReadOnlyDictionary<string, bool> GetAutoHiddenDeviceExitPolicies() =>
-        VirtualGamepads
+    public IReadOnlyDictionary<string, bool> GetAutoHiddenDeviceExitPolicies()
+    {
+        bool restoreAll = _restoreGamepadsOnExit?.Invoke() ?? true;
+        return VirtualGamepads
             .Where(item =>
                 item.ConnectedDevice is { DevicePath: not null } device &&
                 _autoHiddenDeviceKeys.Contains(device.DeviceKey))
             .ToDictionary(
                 item => item.ConnectedDevice!.DevicePath!,
-                item => item.Record.Settings.KeepHiddenOnExit,
+                item => item.Record.Settings.KeepHiddenOnExit || !restoreAll,
                 StringComparer.OrdinalIgnoreCase);
+    }
 
     private async Task ApplyAutomaticHideAsync(
         VirtualGamepadControllerViewModel item,
@@ -1615,6 +2112,18 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+    private sealed class ParameterCommand(Action<object?> execute) : ICommand
+    {
+        public event EventHandler? CanExecuteChanged;
+
+        public bool CanExecute(object? parameter) => true;
+        public void Execute(object? parameter)
+        {
+            execute(parameter);
+            CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
     private sealed class AsyncCommand(Func<Task> execute, Func<bool> canExecute) : ICommand
     {

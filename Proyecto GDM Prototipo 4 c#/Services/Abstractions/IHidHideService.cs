@@ -11,6 +11,7 @@ public interface IHidHideService
     Task RestoreManagedChangesAsync(CancellationToken cancellationToken = default);
     Task RestoreManagedChangesAsync(
         IReadOnlyDictionary<string, bool> hiddenDeviceExitPolicies,
+        bool keepUnlistedDevicesHidden = false,
         CancellationToken cancellationToken = default);
     bool IsHiddenByGdm(string devicePath);
     bool IsPhysicalDevicePresent(string devicePath);

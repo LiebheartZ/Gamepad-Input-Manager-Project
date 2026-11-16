@@ -19,6 +19,7 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
     private ControllerRecord _record;
     private ConnectedGamepad? _connectedDevice;
     private string _profileName = "Sin perfil";
+    private string _virtualGamepadTypeName = "Xbox 360";
     private string _statusMessage = "Detenida";
     private bool _isRunning;
     private bool _isStarting;
@@ -32,6 +33,7 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
         ? "Mando físico desconectado"
         : "Mando físico conectado";
     public string ProfileName => _profileName;
+    public string VirtualGamepadTypeName => _virtualGamepadTypeName;
     public string StatusMessage => _statusMessage;
     public bool IsRunning => _isRunning;
     public bool IsStarting => _isStarting;
@@ -77,12 +79,14 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
         ControllerRecord record,
         ConnectedGamepad? connectedDevice,
         string profileName,
-        bool isRunning)
+        bool isRunning,
+        string? virtualGamepadType = null)
     {
         bool wasConnected = _connectedDevice is not null;
         _record = record;
         _connectedDevice = connectedDevice;
         _profileName = profileName;
+        _virtualGamepadTypeName = VirtualGamepadTypes.DisplayName(virtualGamepadType);
         _isRunning = isRunning;
         if (connectedDevice is null && wasConnected && isRunning)
         {
@@ -95,6 +99,7 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(ConnectedDevice));
         OnPropertyChanged(nameof(ConnectionStatus));
         OnPropertyChanged(nameof(ProfileName));
+        OnPropertyChanged(nameof(VirtualGamepadTypeName));
         OnPropertyChanged(nameof(AutoStartOnConnect));
         OnPropertyChanged(nameof(AutoHideOnConnect));
         OnPropertyChanged(nameof(KeepHiddenOnExit));

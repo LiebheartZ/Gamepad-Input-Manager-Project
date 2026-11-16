@@ -223,7 +223,7 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
             {
                 await _service.HideUntilGdmClosesAsync(item.Device.DevicePath);
                 item.SetHidden(true);
-                StatusMessage = $"«{item.Device.Name}» está oculto para otras aplicaciones mientras GDM esté abierto.";
+                StatusMessage = $"«{item.Device.Name}» está oculto para otras aplicaciones.";
                 _writeLog(DiagnosticLogLevel.Information, "Se agregó el mando a la lista negra persistente de HidHide.", null);
             }
         }
@@ -261,7 +261,8 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
     }
 
     public async Task RestoreManagedChangesAsync(
-        IReadOnlyDictionary<string, bool>? hiddenDeviceExitPolicies = null)
+        IReadOnlyDictionary<string, bool>? hiddenDeviceExitPolicies = null,
+        bool keepUnlistedDevicesHidden = false)
     {
         try
         {
@@ -271,7 +272,9 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
             }
             else
             {
-                await _service.RestoreManagedChangesAsync(hiddenDeviceExitPolicies);
+                await _service.RestoreManagedChangesAsync(
+                    hiddenDeviceExitPolicies,
+                    keepUnlistedDevicesHidden);
             }
         }
         catch (Exception exception) when (
@@ -342,7 +345,7 @@ public sealed class HidHideControllerItem : INotifyPropertyChanged
     public string HardwareIdLabel => _device.HardwareIdLabel;
     public bool CanManage => _canManage && !string.IsNullOrWhiteSpace(_device.DevicePath) && !_isBusy;
     public bool IsHiddenByGdm => _isHiddenByGdm;
-    public string ToggleButtonText => _isHiddenByGdm ? "Mostrar mando" : "Ocultar hasta cerrar GDM";
+    public string ToggleButtonText => _isHiddenByGdm ? "Mostrar mando" : "Ocultar mando";
     public string StateText => string.IsNullOrWhiteSpace(_device.DevicePath)
         ? "SDL no proporcionó la ruta HID"
         : _isHiddenByGdm

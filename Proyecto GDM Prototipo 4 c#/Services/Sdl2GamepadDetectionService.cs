@@ -171,6 +171,7 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
 
             ushort vendorId = SDL.SDL_JoystickGetVendor(joystick);
             ushort productId = SDL.SDL_JoystickGetProduct(joystick);
+            string? devicePath = GetJoystickPath(joystick);
             var device = new ConnectedGamepad
             {
                 DeviceKey = $"SDL2:{openedInstanceId}",
@@ -178,8 +179,9 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
                 VendorId = vendorId == 0 ? null : vendorId,
                 ProductId = productId == 0 ? null : productId,
                 SerialNumber = GetOptionalString(joystick, NativeMethods.SDL_JoystickGetSerial),
-                DevicePath = GetJoystickPath(joystick),
-                SdlGuid = GetSdlGuid(joystick)
+                DevicePath = devicePath,
+                SdlGuid = GetSdlGuid(joystick),
+                IsVirtualGamepad = HidMaestroDeviceIdentifier.IsVirtualGamepad(devicePath)
             };
             IntPtr gameController = NativeMethods.SDL_IsGameController(index) == 1
                 ? NativeMethods.SDL_GameControllerOpen(index)

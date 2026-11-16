@@ -21,6 +21,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private bool _startWithWindows;
     private bool _startMinimized;
     private bool _startWithWindowsAsTask;
+    private string _defaultVirtualGamepadType;
+    private Guid? _defaultProfileId;
+    private bool _restoreGamepadsOnExit = true;
+    private bool _showVirtualGamepadsInAllTabs;
     private int _selectedCategoryIndex;
     private bool _isBusy;
     private string _statusTitle = "Ajustes cargados";
@@ -35,8 +39,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         new("Dark", "Oscuro")
     ];
 
+    public IReadOnlyList<VirtualGamepadTypeOption> VirtualGamepadTypeOptions { get; } =
+        VirtualGamepadTypes.Options;
+
     public IReadOnlyList<string> Categories { get; } =
-        ["General", "Interfaz", "Mandos", "Dependencias", "Acerca de"];
+        ["General", "Interfaz", "Mandos", "Dependencias", "Acerca de", "Debug"];
 
     public ICommand SaveCommand => _saveCommand;
     public ICommand RestoreDefaultsCommand => _restoreDefaultsCommand;
@@ -71,6 +78,30 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         set => SetProperty(ref _startWithWindowsAsTask, value);
     }
 
+    public string DefaultVirtualGamepadType
+    {
+        get => _defaultVirtualGamepadType;
+        set => SetProperty(ref _defaultVirtualGamepadType, value);
+    }
+
+    public Guid? DefaultProfileId
+    {
+        get => _defaultProfileId;
+        set => SetProperty(ref _defaultProfileId, value);
+    }
+
+    public bool RestoreGamepadsOnExit
+    {
+        get => _restoreGamepadsOnExit;
+        set => SetProperty(ref _restoreGamepadsOnExit, value);
+    }
+
+    public bool ShowVirtualGamepadsInAllTabs
+    {
+        get => _showVirtualGamepadsInAllTabs;
+        set => SetProperty(ref _showVirtualGamepadsInAllTabs, value);
+    }
+
     public int SelectedCategoryIndex
     {
         get => _selectedCategoryIndex;
@@ -86,6 +117,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(IsControllersCategory));
             OnPropertyChanged(nameof(IsDependenciesCategory));
             OnPropertyChanged(nameof(IsAboutCategory));
+            OnPropertyChanged(nameof(IsDebugCategory));
         }
     }
 
@@ -94,6 +126,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public bool IsControllersCategory => SelectedCategoryIndex == 2;
     public bool IsDependenciesCategory => SelectedCategoryIndex == 3;
     public bool IsAboutCategory => SelectedCategoryIndex == 4;
+    public bool IsDebugCategory => SelectedCategoryIndex == 5;
 
     public bool IsBusy
     {
@@ -110,8 +143,6 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     }
 
     public string SaveButtonText => IsBusy ? "Guardando..." : "Guardar ajustes";
-
-    public AppSettings Settings => _currentSettings;
 
     public string StatusTitle
     {
@@ -142,9 +173,32 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         _startWithWindows = settings.StartWithWindows;
         _startMinimized = settings.StartMinimized;
         _startWithWindowsAsTask = settings.StartWithWindowsAsTask;
+        _defaultVirtualGamepadType = VirtualGamepadTypes.IsSupported(settings.DefaultVirtualGamepadType)
+            ? settings.DefaultVirtualGamepadType
+            : VirtualGamepadTypes.Default;
+        _defaultProfileId = settings.DefaultProfileId;
+        _restoreGamepadsOnExit = settings.RestoreGamepadsOnExit;
+        _showVirtualGamepadsInAllTabs = settings.ShowVirtualGamepadsInAllTabs;
 
         _saveCommand = new AsyncCommand(SaveAsync, () => !IsBusy);
         _restoreDefaultsCommand = new AsyncCommand(RestoreDefaultsAsync, () => !IsBusy);
+    }
+
+    public async Task SetDefaultProfileIdAsync(Guid? profileId)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        var settings = _currentSettings with
+        {
+            DefaultProfileId = profileId == Guid.Empty ? null : profileId
+        };
+        await _settingsRepository.SaveAsync(settings);
+        _currentSettings = settings;
+        DefaultProfileId = settings.DefaultProfileId;
+        _applySettings(settings);
     }
 
     public Task SaveAsync() => PersistAsync(
@@ -153,22 +207,16 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             Theme = SelectedTheme,
             StartWithWindows = StartWithWindows,
             StartMinimized = StartMinimized,
-            StartWithWindowsAsTask = StartWithWindowsAsTask
+            StartWithWindowsAsTask = StartWithWindowsAsTask,
+            DefaultVirtualGamepadType = VirtualGamepadTypes.IsSupported(DefaultVirtualGamepadType)
+                ? DefaultVirtualGamepadType
+                : VirtualGamepadTypes.Default,
+            DefaultProfileId = DefaultProfileId == Guid.Empty ? null : DefaultProfileId,
+            RestoreGamepadsOnExit = RestoreGamepadsOnExit,
+            ShowVirtualGamepadsInAllTabs = ShowVirtualGamepadsInAllTabs
         },
         "Se guardaron los ajustes.",
         "Ajustes guardados");
-
-    public Task UpdateBluetoothSettingsAsync(bool showAllDevices, bool enableAutoConnect)
-    {
-        return PersistAsync(
-            _currentSettings with
-            {
-                ShowAllBluetoothDevices = showAllDevices,
-                EnableAutoConnectBluetooth = enableAutoConnect
-            },
-            "Se actualizaron las preferencias de Bluetooth.",
-            "Preferencias de Bluetooth actualizadas");
-    }
 
     public Task RestoreDefaultsAsync()
     {
@@ -216,6 +264,10 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             StartWithWindows = settings.StartWithWindows;
             StartMinimized = settings.StartMinimized;
             StartWithWindowsAsTask = settings.StartWithWindowsAsTask;
+            DefaultVirtualGamepadType = settings.DefaultVirtualGamepadType;
+            DefaultProfileId = settings.DefaultProfileId;
+            RestoreGamepadsOnExit = settings.RestoreGamepadsOnExit;
+            ShowVirtualGamepadsInAllTabs = settings.ShowVirtualGamepadsInAllTabs;
             _applySettings(settings);
             StatusTitle = successTitle;
             StatusMessage = successMessage;

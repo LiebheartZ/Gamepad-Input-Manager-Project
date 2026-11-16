@@ -238,10 +238,11 @@ public sealed class HidHideService : IHidHideService
     public Task RestoreManagedChangesAsync(CancellationToken cancellationToken = default) =>
         RestoreManagedChangesAsync(
             new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase),
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
     public async Task RestoreManagedChangesAsync(
         IReadOnlyDictionary<string, bool> hiddenDeviceExitPolicies,
+        bool keepUnlistedDevicesHidden = false,
         CancellationToken cancellationToken = default)
     {
         await _operationLock.WaitAsync(cancellationToken);
@@ -255,6 +256,7 @@ public sealed class HidHideService : IHidHideService
             }
 
             HashSet<string> persistentIds = journal.PersistentDeviceInstanceIds;
+            var explicitlyRestoredIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach ((string devicePath, bool keepHidden) in hiddenDeviceExitPolicies)
             {
                 string instanceId = ResolveDeviceInstanceId(devicePath);
@@ -270,7 +272,14 @@ public sealed class HidHideService : IHidHideService
                 else
                 {
                     persistentIds.Remove(instanceId);
+                    explicitlyRestoredIds.Add(instanceId);
                 }
+            }
+
+            if (keepUnlistedDevicesHidden)
+            {
+                persistentIds.UnionWith(managedDevices.Keys.Where(
+                    id => !explicitlyRestoredIds.Contains(id)));
             }
 
             string[] idsToRestore = managedDevices.Keys

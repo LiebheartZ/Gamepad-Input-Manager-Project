@@ -8,7 +8,9 @@ public static class HidMaestroGamepadMapper
     public static HMGamepadState CreateState(
         GamepadInputSnapshot snapshot,
         HMProfile profile,
-        ControllerProfile? mappingProfile = null)
+        ControllerProfile? mappingProfile = null,
+        string? virtualGamepadType = null,
+        IReadOnlyCollection<string>? additionalTargetButtons = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(profile);
@@ -31,9 +33,23 @@ public static class HidMaestroGamepadMapper
                 out string? mappedTarget) == true
                 ? NormalizeButtonTarget(mappedTarget, source.Id)
                 : source.Id;
-            if (!string.Equals(target, GamepadControlCatalog.NoButtonTarget.Id, StringComparison.Ordinal))
+            if (!string.Equals(target, GamepadControlCatalog.NoButtonTarget.Id, StringComparison.Ordinal) &&
+                GamepadControlCatalog.IsButtonTargetSupported(target, virtualGamepadType))
             {
                 targetButtons.Add(target);
+            }
+        }
+
+        if (additionalTargetButtons is not null)
+        {
+            foreach (string target in additionalTargetButtons)
+            {
+                if (!string.Equals(target, GamepadControlCatalog.NoButtonTarget.Id, StringComparison.Ordinal) &&
+                    GamepadControlCatalog.Buttons.Any(button => button.Id == target) &&
+                    GamepadControlCatalog.IsButtonTargetSupported(target, virtualGamepadType))
+                {
+                    targetButtons.Add(target);
+                }
             }
         }
 

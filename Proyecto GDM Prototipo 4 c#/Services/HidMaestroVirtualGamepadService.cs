@@ -27,6 +27,11 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
     public bool IsRunningFor(string deviceKey) =>
         _sessions.ContainsKey(deviceKey);
 
+    public string? GetRunningVirtualGamepadType(string deviceKey) =>
+        _sessions.TryGetValue(deviceKey, out VirtualControllerSession? session)
+            ? session.VirtualGamepadType
+            : null;
+
     public bool RebindDevice(string previousDeviceKey, ConnectedGamepad device)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(previousDeviceKey);
@@ -67,6 +72,7 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
 
     public async Task StartAsync(
         ConnectedGamepad device,
+        string virtualGamepadType,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(device);
@@ -78,17 +84,19 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
             throw new InvalidOperationException("El mando seleccionado ya no está conectado.");
         }
 
-        await StartAsync(device, snapshot, null, cancellationToken);
+        await StartAsync(device, snapshot, null, virtualGamepadType, cancellationToken);
     }
 
     public async Task StartAsync(
         ConnectedGamepad device,
         GamepadInputSnapshot initialSnapshot,
         ControllerProfile? mappingProfile,
+        string virtualGamepadType,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(initialSnapshot);
+        string normalizedType = VirtualGamepadTypes.Normalize(virtualGamepadType);
         if (!initialSnapshot.IsStandardGameController)
         {
             throw new InvalidOperationException(
@@ -117,9 +125,11 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
                 try
                 {
                     context.LoadDefaultProfiles();
-                    HMProfile outputProfile = context.GetProfile("xbox-360-wired")
+                    string hidMaestroProfileId =
+                        VirtualGamepadTypes.HidMaestroProfileId(normalizedType);
+                    HMProfile outputProfile = context.GetProfile(hidMaestroProfileId)
                         ?? throw new InvalidOperationException(
-                            "HIDMaestro no incluye el perfil de mando virtual Xbox 360.");
+                            $"HIDMaestro no incluye el perfil de mando virtual {VirtualGamepadTypes.DisplayName(normalizedType)}.");
                     if (!context.IsDriverInstalled)
                     {
                         context.InstallDriver();
@@ -139,7 +149,8 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
                         controller,
                         outputProfile,
                         device,
-                        mappingProfile);
+                        mappingProfile,
+                        normalizedType);
                 }
                 catch
                 {
@@ -154,7 +165,8 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
                     HidMaestroGamepadMapper.CreateState(
                         initialSnapshot,
                         session.OutputProfile,
-                        mappingProfile));
+                        mappingProfile,
+                        session.VirtualGamepadType));
             }
             catch
             {
@@ -188,13 +200,14 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
     public void SubmitInputSnapshot(
         ConnectedGamepad device,
         GamepadInputSnapshot snapshot,
-        ControllerProfile? mappingProfile)
+        ControllerProfile? mappingProfile,
+        IReadOnlyCollection<string>? additionalTargetButtons = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(snapshot);
         if (_sessions.TryGetValue(device.DeviceKey, out VirtualControllerSession? session))
         {
-            Submit(session, snapshot, mappingProfile);
+            Submit(session, snapshot, mappingProfile, additionalTargetButtons);
         }
     }
 
@@ -251,13 +264,16 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
     private static void Submit(
         VirtualControllerSession session,
         GamepadInputSnapshot snapshot,
-        ControllerProfile? mappingProfile)
+        ControllerProfile? mappingProfile,
+        IReadOnlyCollection<string>? additionalTargetButtons = null)
     {
         session.Controller.SubmitState(
             HidMaestroGamepadMapper.CreateState(
                 snapshot,
                 session.OutputProfile,
-                mappingProfile));
+                mappingProfile,
+                session.VirtualGamepadType,
+                additionalTargetButtons));
         session.MappingProfile = mappingProfile;
     }
 
@@ -272,12 +288,14 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
         HMController controller,
         HMProfile outputProfile,
         ConnectedGamepad device,
-        ControllerProfile? mappingProfile)
+        ControllerProfile? mappingProfile,
+        string virtualGamepadType)
     {
         public HMContext Context { get; } = context;
         public HMController Controller { get; } = controller;
         public HMProfile OutputProfile { get; } = outputProfile;
         public ConnectedGamepad Device { get; set; } = device;
         public ControllerProfile? MappingProfile { get; set; } = mappingProfile;
+        public string VirtualGamepadType { get; } = virtualGamepadType;
     }
 }

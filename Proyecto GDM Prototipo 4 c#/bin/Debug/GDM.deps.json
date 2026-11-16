@@ -6,7 +6,7 @@
   "compilationOptions": {},
   "targets": {
     ".NETCoreApp,Version=v10.0": {
-      "GDM/0.3.0": {
+      "GDM/0.4.0": {
         "dependencies": {
           "Sayers.SDL2.Core": "1.0.11",
           "HIDMaestro.Core": "2.1.0.0"
@@ -34,7 +34,7 @@
     }
   },
   "libraries": {
-    "GDM/0.3.0": {
+    "GDM/0.4.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
