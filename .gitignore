@@ -1,0 +1,22 @@
+# Salidas de compilación
+bin/
+obj/
+[Bb]uild[Cc]heck*/
+
+# Carpeta de trabajo local (prototipos, notas, backups)
+Otros/
+
+# Visual Studio / Rider
+.vs/
+*.user
+*.suo
+
+# Logs y temporales
+*.log
+*.tmp
+
+# Datos locales de la app (por si se generan dentro del repo)
+*.json.bak
+$tf/
+Thumbs.db
+Desktop.ini

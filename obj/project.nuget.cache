@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "2gnEg+DMDWM=",
+  "dgSpecHash": "sazrM+3LQIc=",
   "success": true,
-  "projectFilePath": "C:\\proyectos\\input manager proyecto\\Proyecto GDM Prototipo 4 c#\\GDM.csproj",
+  "projectFilePath": "C:\\proyectos\\input manager proyecto\\GDM.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\User\\.nuget\\packages\\sayers.sdl2.core\\1.0.11\\sayers.sdl2.core.1.0.11.nupkg.sha512"
   ],

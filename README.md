@@ -42,7 +42,7 @@ GDM consulta los releases del repositorio de forma silenciosa al iniciar (opció
 - `Services`: detección SDL2, salida virtual HIDMaestro, HidHide, LED Sony, apagado Bluetooth, persistencia JSON y actualizador.
 - `ThirdParty`: runtime SDL2 2.32.10 y SDK HIDMaestro 2.1.0 con sus licencias.
 
-Las notas técnicas detalladas del desarrollo están en [`README-TECNICO.md`](README-TECNICO.md).
+Las notas técnicas detalladas del desarrollo se conservan en `Otros/README-TECNICO.md` (carpeta de trabajo local, no incluida en el repo público).
 
 ## Créditos
 

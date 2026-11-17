@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -26,6 +26,10 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="tests\**\*.cs" />
+    <Compile Remove="Otros\**\*.cs" />
+    <Page Remove="Otros\**\*.xaml" />
+    <EmbeddedResource Remove="Otros\**" />
+    <None Remove="Otros\**" />
     <Resource Include="cover.ico" />
     <None Update="ThirdParty\HIDMaestro\2.1.0\LICENSE"
           CopyToOutputDirectory="PreserveNewest"

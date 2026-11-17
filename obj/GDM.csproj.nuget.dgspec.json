@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\proyectos\\input manager proyecto\\Proyecto GDM Prototipo 4 c#\\GDM.csproj": {}
+    "C:\\proyectos\\input manager proyecto\\GDM.csproj": {}
   },
   "projects": {
-    "C:\\proyectos\\input manager proyecto\\Proyecto GDM Prototipo 4 c#\\GDM.csproj": {
+    "C:\\proyectos\\input manager proyecto\\GDM.csproj": {
       "version": "0.16.22",
       "restore": {
-        "projectUniqueName": "C:\\proyectos\\input manager proyecto\\Proyecto GDM Prototipo 4 c#\\GDM.csproj",
+        "projectUniqueName": "C:\\proyectos\\input manager proyecto\\GDM.csproj",
         "projectName": "GDM",
-        "projectPath": "C:\\proyectos\\input manager proyecto\\Proyecto GDM Prototipo 4 c#\\GDM.csproj",
+        "projectPath": "C:\\proyectos\\input manager proyecto\\GDM.csproj",
         "packagesPath": "C:\\Users\\User\\.nuget\\packages\\",
-        "outputPath": "C:\\proyectos\\input manager proyecto\\Proyecto GDM Prototipo 4 c#\\obj\\",
+        "outputPath": "C:\\proyectos\\input manager proyecto\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\User\\AppData\\Roaming\\NuGet\\NuGet.Config"
