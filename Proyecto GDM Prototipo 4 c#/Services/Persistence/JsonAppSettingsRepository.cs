@@ -67,6 +67,12 @@ public sealed class JsonAppSettingsRepository : IAppSettingsRepository
                 "La variante de perfil Xbox 360 no es compatible.");
         }
 
+        if (!UpdateChannels.IsSupported(settings.UpdateChannel))
+        {
+            throw new InvalidDataException(
+                "El canal de actualizaciones no es compatible.");
+        }
+
         if (!CloseButtonBehaviors.IsSupported(settings.CloseButtonBehavior))
         {
             throw new InvalidDataException(

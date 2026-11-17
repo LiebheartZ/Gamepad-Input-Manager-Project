@@ -28,6 +28,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private bool _showVirtualGamepadsInAllTabs;
     private string _closeButtonBehavior;
     private bool _showExitConfirmation = true;
+    private bool _checkForUpdatesOnStartup = true;
+    private string _updateChannel = UpdateChannels.Standard;
     private int _selectedCategoryIndex;
     private bool _isBusy;
     private string _statusTitle = "Ajustes cargados";
@@ -54,8 +56,14 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         new(CloseButtonBehaviors.Exit, "Cerrar GDM")
     ];
 
+    public IReadOnlyList<ThemeOption> UpdateChannelOptions { get; } =
+    [
+        new(UpdateChannels.Standard, "Estándar"),
+        new(UpdateChannels.Nightly, "Nightly")
+    ];
+
     public IReadOnlyList<string> Categories { get; } =
-        ["General", "Interfaz", "Mandos", "Dependencias", "Acerca de", "Debug"];
+        ["General", "Interfaz", "Mandos", "Dependencias", "Acerca de", "Actualizaciones", "Debug"];
 
     public ICommand SaveCommand => _saveCommand;
     public ICommand RestoreDefaultsCommand => _restoreDefaultsCommand;
@@ -132,6 +140,18 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         set => SetProperty(ref _showExitConfirmation, value);
     }
 
+    public bool CheckForUpdatesOnStartup
+    {
+        get => _checkForUpdatesOnStartup;
+        set => SetProperty(ref _checkForUpdatesOnStartup, value);
+    }
+
+    public string UpdateChannel
+    {
+        get => _updateChannel;
+        set => SetProperty(ref _updateChannel, value);
+    }
+
     public int SelectedCategoryIndex
     {
         get => _selectedCategoryIndex;
@@ -147,6 +167,7 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(IsControllersCategory));
             OnPropertyChanged(nameof(IsDependenciesCategory));
             OnPropertyChanged(nameof(IsAboutCategory));
+            OnPropertyChanged(nameof(IsUpdatesCategory));
             OnPropertyChanged(nameof(IsDebugCategory));
         }
     }
@@ -156,7 +177,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     public bool IsControllersCategory => SelectedCategoryIndex == 2;
     public bool IsDependenciesCategory => SelectedCategoryIndex == 3;
     public bool IsAboutCategory => SelectedCategoryIndex == 4;
-    public bool IsDebugCategory => SelectedCategoryIndex == 5;
+    public bool IsUpdatesCategory => SelectedCategoryIndex == 5;
+    public bool IsDebugCategory => SelectedCategoryIndex == 6;
 
     public bool IsBusy
     {
@@ -213,6 +235,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         _showVirtualGamepadsInAllTabs = settings.ShowVirtualGamepadsInAllTabs;
         _closeButtonBehavior = CloseButtonBehaviors.Normalize(settings.CloseButtonBehavior);
         _showExitConfirmation = settings.ShowExitConfirmation;
+        _checkForUpdatesOnStartup = settings.CheckForUpdatesOnStartup;
+        _updateChannel = UpdateChannels.Normalize(settings.UpdateChannel);
 
         _saveCommand = new AsyncCommand(SaveAsync, () => !IsBusy);
         _restoreDefaultsCommand = new AsyncCommand(RestoreDefaultsAsync, () => !IsBusy);
@@ -267,7 +291,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             RestoreGamepadsOnExit = RestoreGamepadsOnExit,
             ShowVirtualGamepadsInAllTabs = ShowVirtualGamepadsInAllTabs,
             CloseButtonBehavior = CloseButtonBehaviors.Normalize(CloseButtonBehavior),
-            ShowExitConfirmation = ShowExitConfirmation
+            ShowExitConfirmation = ShowExitConfirmation,
+            CheckForUpdatesOnStartup = CheckForUpdatesOnStartup,
+            UpdateChannel = UpdateChannels.Normalize(UpdateChannel)
         },
         "Se guardaron los ajustes.",
         "Ajustes guardados");
@@ -325,6 +351,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             ShowVirtualGamepadsInAllTabs = settings.ShowVirtualGamepadsInAllTabs;
             CloseButtonBehavior = settings.CloseButtonBehavior;
             ShowExitConfirmation = settings.ShowExitConfirmation;
+            CheckForUpdatesOnStartup = settings.CheckForUpdatesOnStartup;
+            UpdateChannel = settings.UpdateChannel;
             _applySettings(settings);
             StatusTitle = successTitle;
             StatusMessage = successMessage;

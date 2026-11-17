@@ -1031,6 +1031,7 @@
                         <TabItem Header="Mandos" />
                         <TabItem Header="Dependencias" />
                         <TabItem Header="Acerca de" />
+                        <TabItem Header="Actualizaciones" />
                     </TabControl>
                     <Border Margin="0,12,0,0"
                             MinHeight="290"
@@ -1197,6 +1198,72 @@
                                 <TextBlock Margin="0,8,0,0"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
                                            Text="Creado por LiebheartZ." />
+                            </StackPanel>
+
+                            <StackPanel Visibility="{Binding Settings.IsUpdatesCategory, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock FontSize="16"
+                                           FontWeight="SemiBold"
+                                           Text="Actualizaciones" />
+                                <TextBlock Margin="0,8,0,0"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="{Binding Updates.RepositoryDisplay, StringFormat='Repositorio: {0}'}"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Margin="0,4,0,0"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="{Binding Updates.CurrentVersionLabel}"
+                                           TextWrapping="Wrap" />
+                                <CheckBox Margin="0,14,0,0"
+                                          Content="Buscar actualizaciones automáticamente al iniciar GDM"
+                                          IsChecked="{Binding Settings.CheckForUpdatesOnStartup, Mode=TwoWay}" />
+                                <TextBlock Margin="24,6,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="Se aplica al guardar los ajustes. La búsqueda automática es silenciosa; usa el botón para forzar una comprobación."
+                                           TextWrapping="Wrap" />
+                                <TextBlock Margin="0,12,0,4"
+                                           FontSize="12"
+                                           Text="Canal de actualizaciones" />
+                                <ComboBox Width="220"
+                                          HorizontalAlignment="Left"
+                                          ItemsSource="{Binding Settings.UpdateChannelOptions}"
+                                          DisplayMemberPath="Label"
+                                          SelectedValuePath="Value"
+                                          SelectedValue="{Binding Settings.UpdateChannel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="0,6,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="«Estándar» solo instala versiones con número de función mayor (0.16.x → 0.17.0). «Nightly» instala cualquier versión más reciente, incluidas las correcciones intermedias (0.16.0 → 0.16.5)."
+                                           TextWrapping="Wrap" />
+                                <Button Margin="0,16,0,0"
+                                        HorizontalAlignment="Left"
+                                        MinWidth="170"
+                                        Padding="14,8"
+                                        Command="{Binding Updates.CheckCommand}"
+                                        Content="Buscar actualizaciones" />
+                                <TextBlock Margin="0,14,0,0"
+                                           FontWeight="SemiBold"
+                                           Text="{Binding Updates.UpdateStatusLabel}" />
+                                <TextBlock Margin="0,4,0,0"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="{Binding Updates.StatusMessage}"
+                                           TextWrapping="Wrap" />
+                                <ProgressBar Margin="0,10,0,0"
+                                             Height="8"
+                                             Maximum="100"
+                                             Value="{Binding Updates.DownloadProgress, Mode=OneWay}"
+                                             Visibility="{Binding Updates.IsDownloading, Converter={StaticResource BoolToVisibility}}" />
+                                <Button Margin="0,14,0,0"
+                                        HorizontalAlignment="Left"
+                                        MinWidth="200"
+                                        Padding="14,8"
+                                        Command="{Binding Updates.InstallCommand}"
+                                        Content="Descargar e instalar"
+                                        IsEnabled="{Binding Updates.CanInstall}" />
+                                <TextBlock Margin="0,10,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="La actualización descarga el paquete publicado en GitHub, cierra GDM de forma segura y lo reinicia con los archivos nuevos."
+                                           TextWrapping="Wrap" />
                             </StackPanel>
 
                             <StackPanel Visibility="{Binding Settings.IsDebugCategory, Converter={StaticResource BoolToVisibility}}">

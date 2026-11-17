@@ -44,6 +44,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isSavingController;
     private bool _isRemovingController;
     private bool _hasInitializedAutoStart;
+    private bool _startupUpdateCheckStarted;
     private string _currentSection = "Inicio";
     private string _sectionTitle = "Inicio";
     private string _sectionDescription = "Base de la nueva versión de Gamepad Device Manager.";
@@ -64,6 +65,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public SettingsViewModel? Settings => _settingsViewModel;
     public TesterViewModel Tester => _testerViewModel;
     public ProfilesViewModel Profiles { get; }
+    public UpdateViewModel Updates { get; }
     public HidHideViewModel HidHide { get; }
     public string? LogFilePath => _appLogService?.LogFilePath;
     public string VersionLabel { get; } =
@@ -232,6 +234,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             restoreGamepadsOnExit,
             new SonyControllerLedService(),
             new ControllerPowerOffService());
+        Updates = new UpdateViewModel(
+            new GitHubUpdateService(),
+            () => UpdateChannels.Normalize(_settingsViewModel?.UpdateChannel),
+            RequestUpdateInstallExit,
+            _appLogService);
         Profiles.PropertyChanged += OnProfilesPropertyChanged;
         NavigateCommand = new NavigationCommand(Navigate);
         _refreshDevicesCommand = new AsyncCommand(
@@ -364,11 +371,59 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    private void KickoffStartupUpdateCheck()
+    {
+        if (_startupUpdateCheckStarted ||
+            _settingsViewModel?.CheckForUpdatesOnStartup != true)
+        {
+            return;
+        }
+
+        _startupUpdateCheckStarted = true;
+        _ = CheckForUpdatesOnStartupAsync();
+    }
+
+    private async Task CheckForUpdatesOnStartupAsync()
+    {
+        try
+        {
+            await Updates.CheckAsync(silent: true);
+            if (Updates.HasUpdateAvailable)
+            {
+                _appLogService?.Write(
+                    DiagnosticLogLevel.Information,
+                    "Actualizaciones",
+                    "Se detectó una versión nueva de GDM en GitHub.");
+            }
+        }
+        catch (Exception exception)
+        {
+            _appLogService?.Write(
+                DiagnosticLogLevel.Warning,
+                "Actualizaciones",
+                "Error en la verificación automática de actualizaciones.",
+                exception);
+        }
+    }
+
+    private void RequestUpdateInstallExit()
+    {
+        if (System.Windows.Application.Current is App app)
+        {
+            app.RequestProgrammaticExit(skipExitConfirmation: true);
+        }
+        else
+        {
+            System.Windows.Application.Current?.Shutdown();
+        }
+    }
+
     private async Task LoadSavedControllersAsync()
     {
         if (_controllerRepository is null)
         {
             _isControllerDataLoaded = true;
+            KickoffStartupUpdateCheck();
             OnPropertyChanged(nameof(IsControllerDataLoaded));
             OnPropertyChanged(nameof(ShowEmptyDevicesMessage));
             _refreshDevicesCommand.NotifyCanExecuteChanged();
@@ -385,6 +440,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
 
             _isControllerDataLoaded = true;
+            KickoffStartupUpdateCheck();
             OnPropertyChanged(nameof(IsControllerDataLoaded));
             OnPropertyChanged(nameof(ShowEmptyDevicesMessage));
             RebuildControllerItems();

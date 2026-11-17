@@ -11,7 +11,6 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using Color = System.Windows.Media.Color;
-using MessageBox = System.Windows.MessageBox;
 
 namespace GDM;
 
@@ -23,6 +22,7 @@ public partial class App : System.Windows.Application
     private IAppSettingsRepository? _settingsRepository;
     private bool _isHandlingWindowClose;
     private bool _allowWindowClose;
+    private bool _suppressExitConfirmation;
     private bool _settingsLoadedSuccessfully;
     private SingleInstanceCoordinator? _singleInstanceCoordinator;
     private bool _activationPending;
@@ -46,32 +46,24 @@ public partial class App : System.Windows.Application
                 }
                 catch (TimeoutException exception)
                 {
-                    MessageBox.Show(
-                        exception.Message,
-                        "GDM — Inicio elevado",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
+                    AppDialog.ShowError("GDM — Inicio elevado", exception.Message);
                     Shutdown();
                     return;
                 }
             }
             else
             {
-                MessageBox.Show(
-                    "GDM ya se está ejecutando. Se abrirá la ventana de la instancia existente.",
+                AppDialog.ShowInfo(
                     "GDM ya está abierto",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
+                    "GDM ya se está ejecutando. Se abrirá la ventana de la instancia existente.");
 
                 bool activated = await SingleInstanceCoordinator.NotifyPrimaryAsync();
                 if (!activated)
                 {
-                    MessageBox.Show(
-                        "Ya hay una instancia de GDM en ejecución, pero no se pudo activar su ventana. " +
-                        "Comprueba que la instancia existente no esté bloqueada.",
+                    AppDialog.ShowWarning(
                         "GDM ya está abierto",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
+                        "Ya hay una instancia de GDM en ejecución, pero no se pudo activar su ventana. " +
+                        "Comprueba que la instancia existente no esté bloqueada.");
                 }
 
                 Shutdown();
@@ -188,13 +180,11 @@ public partial class App : System.Windows.Application
                 "HidHide",
                 "No se pudo recuperar una operación pendiente de ocultamiento.",
                 exception);
-            MessageBox.Show(
+            AppDialog.ShowWarning(
+                "GDM — Recuperación de HidHide pendiente",
                 "GDM no pudo recuperar automáticamente un cambio pendiente de HidHide. " +
                 "La operación se volverá a intentar antes de ocultar o restaurar mandos.\n\n" +
-                exception.Message,
-                "GDM — Recuperación de HidHide pendiente",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                exception.Message);
         }
 
         try
@@ -226,13 +216,11 @@ public partial class App : System.Windows.Application
                 "HidHide",
                 "No se pudo autorizar GDM antes de inicializar SDL2.",
                 exception);
-            MessageBox.Show(
+            AppDialog.ShowWarning(
+                "GDM — Acceso de HidHide",
                 "GDM no pudo preparar su acceso al mando físico antes de iniciar SDL2. " +
                 "El mando podría dejar de enviar entradas si se oculta automáticamente.\n\n" +
-                exception.Message,
-                "GDM — Acceso de HidHide",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                exception.Message);
         }
 
         var virtualGamepadService = new HidMaestroVirtualGamepadService(
@@ -299,11 +287,7 @@ public partial class App : System.Windows.Application
                 "Mando virtual",
                 "No se pudo interpretar la solicitud de inicio recibida.",
                 exception);
-            MessageBox.Show(
-                exception.Message,
-                "GDM — Inicio de emulación",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            AppDialog.ShowError("GDM — Inicio de emulación", exception.Message);
             return null;
         }
 
@@ -339,11 +323,9 @@ public partial class App : System.Windows.Application
             "Mando virtual",
             "No se pudo interpretar la solicitud de inicio recibida.",
             exception);
-        MessageBox.Show(
-            $"No se pudo iniciar automáticamente el mando virtual.\n\n{exception.Message}",
+        AppDialog.ShowError(
             "GDM — Inicio de emulación",
-            MessageBoxButton.OK,
-            MessageBoxImage.Error);
+            $"No se pudo iniciar automáticamente el mando virtual.\n\n{exception.Message}");
     }
 
     private void ApplyTheme(string theme)
@@ -471,6 +453,17 @@ public partial class App : System.Windows.Application
             new Action(() => _ = HandleExitRequestedAsync(window)));
     }
 
+    public void RequestProgrammaticExit(bool skipExitConfirmation = false)
+    {
+        _suppressExitConfirmation |= skipExitConfirmation;
+        if (MainWindow is MainWindow window && !window.IsExitRequested)
+        {
+            window.MarkExitRequested();
+            window.Dispatcher.BeginInvoke(
+                new Action(() => _ = HandleExitRequestedAsync(window)));
+        }
+    }
+
     private async Task HandleExitRequestedAsync(MainWindow window)
     {
         if (_isHandlingWindowClose)
@@ -482,7 +475,9 @@ public partial class App : System.Windows.Application
 
         try
         {
-            if (!window.IsElevatedRelaunch && Settings.ShowExitConfirmation)
+            if (!window.IsElevatedRelaunch &&
+                Settings.ShowExitConfirmation &&
+                !_suppressExitConfirmation)
             {
                 (bool confirmed, bool dontShowAgain) = ExitConfirmationWindow.ShowConfirmation();
                 if (!confirmed)
@@ -515,15 +510,13 @@ public partial class App : System.Windows.Application
                         "HidHide",
                         "No se pudo restaurar la lista negra al cerrar GDM.",
                         exception);
-                    MessageBoxResult result = MessageBox.Show(
-                        window,
-                        "No se pudo restaurar la lista negra de HidHide. Si cierras GDM, los mandos afectados pueden permanecer ocultos " +
-                        "hasta que GDM vuelva a iniciarse; el diario se conservará para reintentar la restauración.\n\n" +
-                        $"{exception.Message}\n\n¿Deseas cerrar GDM de todos modos?",
-                        "GDM — No se pudo restaurar HidHide",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Warning);
-                    if (result != MessageBoxResult.Yes)
+                    if (!AppDialog.Confirm(
+                            "GDM — No se pudo restaurar HidHide",
+                            "No se pudo restaurar la lista negra de HidHide. Si cierras GDM, los mandos afectados pueden permanecer ocultos " +
+                            "hasta que GDM vuelva a iniciarse; el diario se conservará para reintentar la restauración.\n\n" +
+                            $"{exception.Message}\n\n¿Deseas cerrar GDM de todos modos?",
+                            AppDialogIcon.Warning,
+                            window))
                     {
                         window.CancelExitRequest();
                         return;
@@ -652,10 +645,8 @@ public partial class App : System.Windows.Application
 
     private void ShowSettingsWarning(Exception exception)
     {
-        MessageBox.Show(
-            $"No se pudieron cargar o guardar los ajustes de GDM. La aplicación continuará con valores predeterminados.\n\n{exception.Message}",
+        AppDialog.ShowWarning(
             "GDM — Ajustes no disponibles",
-            MessageBoxButton.OK,
-            MessageBoxImage.Warning);
+            $"No se pudieron cargar o guardar los ajustes de GDM. La aplicación continuará con valores predeterminados.\n\n{exception.Message}");
     }
 }

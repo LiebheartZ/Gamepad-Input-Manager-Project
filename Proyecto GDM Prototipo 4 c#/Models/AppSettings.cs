@@ -8,6 +8,7 @@ public sealed record AppSettings
     public string Theme { get; init; } = "System";
     public string Language { get; init; } = "es";
     public bool CheckForUpdatesOnStartup { get; init; } = true;
+    public string UpdateChannel { get; init; } = UpdateChannels.Standard;
     public bool StartWithWindows { get; init; }
     public bool StartMinimized { get; init; }
     public bool StartWithWindowsAsTask { get; init; }

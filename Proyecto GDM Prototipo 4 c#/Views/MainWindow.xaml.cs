@@ -9,7 +9,7 @@ using System.Windows.Input;
 using GDM.Models;
 using GDM.Services.Abstractions;
 using GDM.ViewModels;
-using MessageBox = System.Windows.MessageBox;
+
 
 namespace GDM.Views;
 
@@ -88,13 +88,12 @@ public partial class MainWindow : Window
             gamepadDetectionService,
             appLogService,
             controllerRepository,
-            record => MessageBox.Show(
-                this,
+            record => AppDialog.Confirm(
+                "Eliminar mando guardado",
                 $"Se eliminará «{record.DisplayName}» y su configuración guardada en GDM. " +
                 "El emparejamiento de Windows no se modificará.\n\n¿Deseas continuar?",
-                "Eliminar mando guardado",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning) == MessageBoxResult.Yes,
+                AppDialogIcon.Warning,
+                this),
             settingsViewModel,
             profileRepository: profileRepository,
             virtualGamepadService: virtualGamepadService,
@@ -103,12 +102,11 @@ public partial class MainWindow : Window
             defaultVirtualGamepadType: defaultVirtualGamepadType,
             restoreGamepadsOnExit: restoreGamepadsOnExit,
             defaultProfileId: defaultProfileId,
-            confirmDeleteProfile: profile => MessageBox.Show(
-                this,
-                $"Se eliminará el perfil «{profile.DisplayName}». Esta acción no se puede deshacer.\n\n¿Deseas continuar?",
+            confirmDeleteProfile: profile => AppDialog.Confirm(
                 "Eliminar perfil",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning) == MessageBoxResult.Yes);
+                $"Se eliminará el perfil «{profile.DisplayName}». Esta acción no se puede deshacer.\n\n¿Deseas continuar?",
+                AppDialogIcon.Warning,
+                this));
         DataContext = _viewModel;
         Loaded += async (_, _) =>
         {
@@ -215,15 +213,13 @@ public partial class MainWindow : Window
 
     private bool LaunchElevatedVirtualGamepad(ConnectedGamepad device)
     {
-        MessageBoxResult confirmation = MessageBox.Show(
-            this,
-            "Para crear el mando virtual, Windows debe abrir GDM como administrador. " +
-            "En el primer inicio de la emulación, HIDMaestro también instalará su controlador firmado localmente.\n\n" +
-            "¿Deseas continuar?",
-            "Permisos para el mando virtual",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-        if (confirmation != MessageBoxResult.Yes)
+        if (!AppDialog.Confirm(
+                "Permisos para el mando virtual",
+                "Para crear el mando virtual, Windows debe abrir GDM como administrador. " +
+                "En el primer inicio de la emulación, HIDMaestro también instalará su controlador firmado localmente.\n\n" +
+                "¿Deseas continuar?",
+                AppDialogIcon.Warning,
+                this))
         {
             return false;
         }
@@ -329,12 +325,10 @@ public partial class MainWindow : Window
         catch (Exception exception) when (
             exception is Win32Exception or InvalidOperationException)
         {
-            MessageBox.Show(
-                this,
-                $"No se pudo abrir la ventana Dispositivos de juego de Windows.\n\n{exception.Message}",
+            AppDialog.ShowError(
                 "No se pudo abrir Dispositivos de juego",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                $"No se pudo abrir la ventana Dispositivos de juego de Windows.\n\n{exception.Message}",
+                this);
         }
     }
 }
