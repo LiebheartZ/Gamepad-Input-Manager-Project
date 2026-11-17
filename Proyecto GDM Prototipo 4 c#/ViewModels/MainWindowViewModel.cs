@@ -84,6 +84,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IsControllerSection && _isControllerDataLoaded && ControllerItems.Count == 0;
     public bool ShowConnectedGamepads => IsControllerSection && ControllerItems.Count > 0;
     public bool IsControllerDataLoaded => _isControllerDataLoaded;
+    public bool IsVirtualGamepadBusy =>
+        Profiles.IsAnyVirtualGamepadBusy || Tester.IsStartingVirtualGamepad;
+
+    public string VirtualGamepadBusyMessage
+    {
+        get
+        {
+            if (Tester.IsStartingVirtualGamepad)
+            {
+                return "Iniciando mando virtual desde Tester…";
+            }
+
+            VirtualGamepadControllerViewModel? busyItem = Profiles.VirtualGamepads
+                .FirstOrDefault(item => item.IsStarting);
+            return busyItem is null
+                ? "Procesando mando virtual…"
+                : $"Procesando «{busyItem.DisplayName}»…";
+        }
+    }
     public bool IsRefreshing
     {
         get => _isRefreshing;
@@ -209,7 +228,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 message,
                 exception),
             defaultVirtualGamepadType,
-            restoreGamepadsOnExit);
+            restoreGamepadsOnExit,
+            new SonyControllerLedService());
         Profiles.PropertyChanged += OnProfilesPropertyChanged;
         NavigateCommand = new NavigationCommand(Navigate);
         _refreshDevicesCommand = new AsyncCommand(
@@ -313,6 +333,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         if (string.Equals(
                 previous.DefaultVirtualGamepadType,
                 current.DefaultVirtualGamepadType,
+                StringComparison.Ordinal) &&
+            string.Equals(
+                previous.Xbox360ProfileVariant,
+                current.Xbox360ProfileVariant,
                 StringComparison.Ordinal))
         {
             return;
@@ -698,6 +722,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void OnTesterPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(TesterViewModel.IsStartingVirtualGamepad) ||
+            e.PropertyName == nameof(TesterViewModel.IsVirtualGamepadRunning))
+        {
+            OnPropertyChanged(nameof(IsVirtualGamepadBusy));
+            OnPropertyChanged(nameof(VirtualGamepadBusyMessage));
+        }
+
         if (e.PropertyName == nameof(TesterViewModel.IsVirtualGamepadRunning))
         {
             if (Tester.IsVirtualGamepadRunning)
@@ -731,6 +762,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 StopMonitoring();
             }
 
+            return;
+        }
+
+        if (e.PropertyName == nameof(ProfilesViewModel.IsAnyVirtualGamepadBusy))
+        {
+            OnPropertyChanged(nameof(IsVirtualGamepadBusy));
+            OnPropertyChanged(nameof(VirtualGamepadBusyMessage));
             return;
         }
 

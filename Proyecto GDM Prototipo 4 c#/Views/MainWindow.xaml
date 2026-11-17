@@ -50,6 +50,20 @@
                 <StackPanel Grid.Column="1"
                             VerticalAlignment="Center"
                             HorizontalAlignment="Right">
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Visibility="{Binding IsVirtualGamepadBusy, Converter={StaticResource BoolToVisibility}}">
+                        <ProgressBar Width="90"
+                                     Height="5"
+                                     VerticalAlignment="Center"
+                                     IsIndeterminate="True"
+                                     Foreground="#7FD4FF" />
+                        <TextBlock Margin="10,0,0,0"
+                                   VerticalAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="#FFD166"
+                                   Text="{Binding VirtualGamepadBusyMessage}" />
+                    </StackPanel>
                     <TextBlock HorizontalAlignment="Right"
                                FontSize="12"
                                Foreground="#C5D5E3"
@@ -1045,9 +1059,27 @@
                                            Foreground="{DynamicResource SecondaryTextBrush}"
                                            Text="Windows solicitará autorización de administrador al activar, cambiar o quitar esta tarea. Después, iniciará GDM elevado al iniciar sesión sin mostrar UAC en cada inicio."
                                            TextWrapping="Wrap" />
-                                <TextBlock Margin="0,14,0,0"
+                                <TextBlock Margin="0,14,0,5"
+                                           FontSize="12"
+                                           Text="Acción del botón X" />
+                                <ComboBox Width="260"
+                                          HorizontalAlignment="Left"
+                                          ItemsSource="{Binding Settings.CloseButtonBehaviorOptions}"
+                                          DisplayMemberPath="Label"
+                                          SelectedValuePath="Value"
+                                          SelectedValue="{Binding Settings.CloseButtonBehavior, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="0,6,0,0"
+                                           FontSize="11"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
-                                           Text="Al cerrar la ventana, GDM seguirá ejecutándose en segundo plano. Para salir completamente, usa Cerrar GDM desde el menú del icono de bandeja."
+                                           Text="«Ocultar en la bandeja» mantiene GDM ejecutándose en segundo plano; «Cerrar GDM» sale por completo tras la confirmación."
+                                           TextWrapping="Wrap" />
+                                <CheckBox Margin="0,14,0,0"
+                                          Content="Mostrar confirmación al cerrar GDM"
+                                          IsChecked="{Binding Settings.ShowExitConfirmation, Mode=TwoWay}" />
+                                <TextBlock Margin="24,6,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="Al cerrar GDM por completo se pide confirmación con la opción de no volver a mostrar el aviso. Desactiva esta casilla para suprimirla permanentemente."
                                            TextWrapping="Wrap" />
                             </StackPanel>
 
@@ -1091,6 +1123,20 @@
                                            FontSize="11"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
                                            Text="Se usa en los mandos sin perfil asignado y en las salidas iniciadas desde Tester. Los perfiles guardados pueden definir su propio tipo."
+                                           TextWrapping="Wrap" />
+                                <TextBlock Margin="0,14,0,5"
+                                           FontSize="12"
+                                           Text="Perfil HIDMaestro para Xbox 360" />
+                                <ComboBox Width="220"
+                                          HorizontalAlignment="Left"
+                                          ItemsSource="{Binding Settings.Xbox360VariantOptions}"
+                                          DisplayMemberPath="DisplayName"
+                                          SelectedValuePath="Id"
+                                          SelectedValue="{Binding Settings.Xbox360ProfileVariant, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="0,6,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="Perfil que HIDMaestro usa para crear el mando virtual Xbox 360. Se aplica al iniciar o reiniciar cualquier salida Xbox 360, incluidas las de perfiles que usan ese tipo."
                                            TextWrapping="Wrap" />
                                 <TextBlock Margin="0,14,0,5"
                                            FontSize="12"
@@ -1334,21 +1380,25 @@
                         </TabControl.ItemTemplate>
                         <TabControl.ContentTemplate>
                             <DataTemplate>
-                                <StackPanel Margin="16,14,16,16">
-                                    <Border Padding="14"
-                                            Background="{DynamicResource PanelBrush}"
-                                            BorderBrush="{DynamicResource BorderBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="8">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel>
-                                                <TextBlock FontSize="16"
-                                                           FontWeight="SemiBold"
-                                                           Text="{Binding DisplayName}" />
+                                <TabControl Margin="0,12,0,0"
+                                            Background="Transparent"
+                                            BorderThickness="0">
+                                    <TabItem Header="Mando virtual">
+                                        <StackPanel Margin="16,14,16,16">
+                                            <Border Padding="14"
+                                                    Background="{DynamicResource PanelBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock FontSize="16"
+                                                                   FontWeight="SemiBold"
+                                                                   Text="{Binding DisplayName}" />
                                                 <TextBlock Margin="0,3,0,0"
                                                            FontSize="11"
                                                            Foreground="{DynamicResource SecondaryTextBrush}"
@@ -1476,6 +1526,10 @@
                                             </WrapPanel>
                                         </Grid>
                                     </Border>
+                                        </StackPanel>
+                                    </TabItem>
+                                    <TabItem Header="Perfil">
+                                        <StackPanel Margin="16,14,16,16">
                                     <Border Margin="0,14,0,0"
                                             Padding="14"
                                             Background="{DynamicResource PanelBrush}"
@@ -1511,7 +1565,134 @@
                                     </Border>
                                     <views:ProfileEditorView Margin="0,16,0,0"
                                                              DataContext="{Binding DataContext.Profiles, RelativeSource={RelativeSource AncestorType=Window}}" />
-                                </StackPanel>
+                                        </StackPanel>
+                                    </TabItem>
+                                    <TabItem Header="Otros">
+                                        <StackPanel Margin="16,14,16,16">
+                                            <Border Padding="18"
+                                                    Background="{DynamicResource PanelBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <StackPanel>
+                                                    <TextBlock FontSize="16"
+                                                               FontWeight="SemiBold"
+                                                               Text="LED del mando" />
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="{Binding LedSupportText}"
+                                                               TextWrapping="Wrap" />
+                                                    <StackPanel Margin="0,12,0,0"
+                                                                Visibility="{Binding HasLedSupport, Converter={StaticResource BoolToVisibility}}">
+                                                        <TextBlock FontSize="12"
+                                                                   Text="Modo de color" />
+                                                        <ComboBox Width="280"
+                                                                  HorizontalAlignment="Left"
+                                                                  Margin="0,4,0,0"
+                                                                  ItemsSource="{Binding LedModeOptions}"
+                                                                  DisplayMemberPath="Label"
+                                                                  SelectedValuePath="Value"
+                                                                  SelectedValue="{Binding LedMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                        <StackPanel Margin="0,12,0,0">
+                                                            <StackPanel.Style>
+                                                                <Style TargetType="StackPanel">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding LedMode}" Value="player">
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </StackPanel.Style>
+                                                            <TextBlock FontSize="12" Text="Número de jugador" />
+                                                            <ComboBox Width="120"
+                                                                      HorizontalAlignment="Left"
+                                                                      Margin="0,4,0,10"
+                                                                      ItemsSource="{Binding LedPlayerNumberOptions}"
+                                                                      SelectedItem="{Binding LedPlayerNumber, Mode=TwoWay}" />
+                                                            <ItemsControl ItemsSource="{Binding LedPlayerColorSlots}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <StackPanel Orientation="Horizontal"
+                                                                                    Margin="0,0,0,6">
+                                                                            <TextBlock Width="90"
+                                                                                       VerticalAlignment="Center"
+                                                                                       Text="{Binding Label}" />
+                                                                            <Border Width="34"
+                                                                                    Height="20"
+                                                                                    Margin="0,0,10,0"
+                                                                                    VerticalAlignment="Center"
+                                                                                    Background="{Binding Preview}"
+                                                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                                                    BorderThickness="1"
+                                                                                    CornerRadius="3" />
+                                                                            <Button Padding="10,3"
+                                                                                    Content="Elegir…"
+                                                                                    Command="{Binding PickCommand}" />
+                                                                        </StackPanel>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                            <TextBlock FontSize="11"
+                                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                                       Text="El color de la barra de luz y los indicadores de jugador seguirán al número elegido."
+                                                                       TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                        <StackPanel Margin="0,4,0,0">
+                                                            <StackPanel.Style>
+                                                                <Style TargetType="StackPanel">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding LedMode}" Value="manual">
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </StackPanel.Style>
+                                                            <TextBlock FontSize="12" Text="Color" />
+                                                            <StackPanel Orientation="Horizontal"
+                                                                        Margin="0,4,0,10">
+                                                                <Border Width="34"
+                                                                        Height="20"
+                                                                        Margin="0,0,10,0"
+                                                                        VerticalAlignment="Center"
+                                                                        Background="{Binding LedManualColorPreview}"
+                                                                        BorderBrush="{DynamicResource BorderBrush}"
+                                                                        BorderThickness="1"
+                                                                        CornerRadius="3" />
+                                                                <Button Padding="10,3"
+                                                                        Content="Elegir color…"
+                                                                        Command="{Binding PickLedManualColorCommand}" />
+                                                            </StackPanel>
+                                                            <TextBlock FontSize="12" Text="Brillo" />
+                                                            <Slider Width="280"
+                                                                    HorizontalAlignment="Left"
+                                                                    Minimum="0"
+                                                                    Maximum="255"
+                                                                    Value="{Binding LedBrightness, Mode=TwoWay}" />
+                                                        </StackPanel>
+                                                        <TextBlock Margin="0,8,0,0"
+                                                                   FontSize="11"
+                                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                                   TextWrapping="Wrap">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding LedMode}" Value="virtual">
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                            El LED del mando físico se pondrá verde mientras la salida virtual sea Xbox 360 y azul mientras sea DualShock 4; se apagará al detener la salida.
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </TabItem>
+                                </TabControl>
                             </DataTemplate>
                         </TabControl.ContentTemplate>
                     </TabControl>

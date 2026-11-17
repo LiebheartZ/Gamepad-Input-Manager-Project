@@ -9,6 +9,7 @@ namespace GDM.Services;
 public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
 {
     private readonly IGamepadInputService _inputService;
+    private readonly Func<string?>? _xbox360Variant;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly ConcurrentDictionary<string, VirtualControllerSession> _sessions =
         new(StringComparer.Ordinal);
@@ -19,9 +20,12 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
     public bool IsAdministrator => IsAdministratorProcess();
     public string? SourceDeviceName => _sessions.Values.FirstOrDefault()?.Device.Name;
 
-    public HidMaestroVirtualGamepadService(IGamepadInputService inputService)
+    public HidMaestroVirtualGamepadService(
+        IGamepadInputService inputService,
+        Func<string?>? xbox360Variant = null)
     {
         _inputService = inputService ?? throw new ArgumentNullException(nameof(inputService));
+        _xbox360Variant = xbox360Variant;
     }
 
     public bool IsRunningFor(string deviceKey) =>
@@ -125,9 +129,10 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
                 try
                 {
                     context.LoadDefaultProfiles();
-                    string hidMaestroProfileId =
-                        VirtualGamepadTypes.HidMaestroProfileId(normalizedType);
-                    HMProfile outputProfile = context.GetProfile(hidMaestroProfileId)
+                    HMProfile outputProfile = context.GetProfile(
+                            VirtualGamepadTypes.HidMaestroProfileId(
+                                normalizedType,
+                                _xbox360Variant?.Invoke()))
                         ?? throw new InvalidOperationException(
                             $"HIDMaestro no incluye el perfil de mando virtual {VirtualGamepadTypes.DisplayName(normalizedType)}.");
                     if (!context.IsDriverInstalled)

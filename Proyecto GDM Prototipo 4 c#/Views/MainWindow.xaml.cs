@@ -161,6 +161,16 @@ public partial class MainWindow : Window
         Close();
     }
 
+    public void MarkExitRequested()
+    {
+        _isExitRequested = true;
+    }
+
+    public void CancelExitRequest()
+    {
+        _isExitRequested = false;
+    }
+
     private void ShowFromTray()
     {
         _ = Dispatcher.BeginInvoke(ShowFromTrayImmediately);

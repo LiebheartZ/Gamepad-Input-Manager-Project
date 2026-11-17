@@ -26,6 +26,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     private readonly Func<ConnectedGamepad, bool>? _isPhysicalDevicePresent;
     private readonly Func<string>? _defaultVirtualGamepadType;
     private readonly Func<bool>? _restoreGamepadsOnExit;
+    private readonly ISonyControllerLedService? _ledService;
+    private readonly Dictionary<string, SonyLedApplyResult> _lastLedResults = new(StringComparer.Ordinal);
     private readonly AsyncCommand _createCommand;
     private readonly AsyncCommand _saveCommand;
     private readonly AsyncCommand _duplicateCommand;
@@ -49,6 +51,9 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     private string _draftName = string.Empty;
     private string _draftDescription = string.Empty;
     private string _draftVirtualGamepadType = VirtualGamepadTypes.Default;
+    private readonly Dictionary<string, ControllerProfileMapping> _typeMappingDrafts =
+        new(StringComparer.Ordinal);
+    private bool _isLoadingProfileDraft;
     private double _leftStickDeadZone;
     private double _rightStickDeadZone;
     private string _statusMessage = "Los perfiles aún no se han cargado.";
@@ -92,6 +97,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
 
     public bool IsInitialized => _isInitialized;
     public bool IsAnyVirtualGamepadRunning => _virtualGamepadService?.IsRunning == true;
+    public bool IsAnyVirtualGamepadBusy => VirtualGamepads.Any(item => item.IsStarting);
     public bool HasAutoStartVirtualGamepad =>
         SavedControllers.Any(controller => controller.Settings.AutoStartVirtualGamepad);
 
@@ -118,12 +124,29 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         get => _draftVirtualGamepadType;
         set
         {
-            if (SetProperty(ref _draftVirtualGamepadType, value))
+            if (EqualityComparer<string>.Default.Equals(_draftVirtualGamepadType, value))
             {
-                RefreshButtonMappingTargets();
+                return;
             }
+
+            string previousType = _draftVirtualGamepadType;
+            _draftVirtualGamepadType = value;
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(DraftVirtualGamepadType)));
+            if (!_isLoadingProfileDraft)
+            {
+                CaptureMappingDraft(previousType);
+                LoadControlMappingRows(GetMappingDraft(SelectedProfile, value));
+                RefreshComboTargetButtons();
+            }
+
+            OnPropertyChanged(nameof(DraftVirtualGamepadTypeName));
         }
     }
+
+    public string DraftVirtualGamepadTypeName =>
+        VirtualGamepadTypes.DisplayName(DraftVirtualGamepadType);
 
     public double LeftStickDeadZone
     {
@@ -153,12 +176,22 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 return;
             }
 
-            DraftName = value?.DisplayName ?? string.Empty;
-            DraftDescription = value?.Description ?? string.Empty;
-            DraftVirtualGamepadType = value?.VirtualGamepadType is { } type &&
-                                      VirtualGamepadTypes.IsSupported(type)
-                ? type
-                : ResolveDefaultVirtualGamepadType();
+            _isLoadingProfileDraft = true;
+            try
+            {
+                DraftName = value?.DisplayName ?? string.Empty;
+                DraftDescription = value?.Description ?? string.Empty;
+                DraftVirtualGamepadType = value?.VirtualGamepadType is { } type &&
+                                          VirtualGamepadTypes.IsSupported(type)
+                    ? type
+                    : ResolveDefaultVirtualGamepadType();
+            }
+            finally
+            {
+                _isLoadingProfileDraft = false;
+            }
+
+            _typeMappingDrafts.Clear();
             LoadMappingRows(value);
             NotifyCommandsCanExecuteChanged();
         }
@@ -230,7 +263,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         Func<ConnectedGamepad, bool>? isPhysicalDevicePresent = null,
         Action<DiagnosticLogLevel, string, Exception?>? writeDiagnostic = null,
         Func<string>? defaultVirtualGamepadType = null,
-        Func<bool>? restoreGamepadsOnExit = null)
+        Func<bool>? restoreGamepadsOnExit = null,
+        ISonyControllerLedService? ledService = null)
     {
         _profileRepository = profileRepository;
         _controllerRepository = controllerRepository;
@@ -246,6 +280,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         _isPhysicalDevicePresent = isPhysicalDevicePresent;
         _defaultVirtualGamepadType = defaultVirtualGamepadType;
         _restoreGamepadsOnExit = restoreGamepadsOnExit;
+        _ledService = ledService;
         _createCommand = new AsyncCommand(CreateAsync, () => CanEditProfiles);
         _saveCommand = new AsyncCommand(SaveAsync, () =>
             CanEditProfiles && SelectedProfile is not null &&
@@ -437,6 +472,11 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 }
 
                 ControllerProfile? profile = FindAssignedProfile(item.Record);
+                string? runningType = _virtualGamepadService
+                    .GetRunningVirtualGamepadType(device.DeviceKey);
+                string effectiveType = VirtualGamepadTypes.IsSupported(runningType)
+                    ? runningType!
+                    : ResolveVirtualGamepadType(item.Record);
                 _hiddenInputUnavailableStates.Remove(device.DeviceKey);
                 ComboEvaluation comboEvaluation = _comboEvaluator.Evaluate(
                     device.DeviceKey,
@@ -445,7 +485,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 _virtualGamepadService.SubmitInputSnapshot(
                     device,
                     snapshot,
-                    profile,
+                    profile?.WithMappingsFor(effectiveType),
                     GetComboTargetButtons(comboEvaluation));
                 await ApplyComboActionsAsync(item, device, snapshot, profile, comboEvaluation);
             }
@@ -700,6 +740,14 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             return;
         }
 
+        CaptureMappingDraft(DraftVirtualGamepadType);
+        string profileType = VirtualGamepadTypes.IsSupported(DraftVirtualGamepadType)
+            ? DraftVirtualGamepadType
+            : selected.VirtualGamepadType;
+        Dictionary<string, ControllerProfileMapping> typeMappings = BuildTypeMappings(selected);
+        ControllerProfileMapping primaryMapping =
+            typeMappings[VirtualGamepadTypes.Normalize(profileType)];
+
         IsBusy = true;
         try
         {
@@ -707,22 +755,12 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             {
                 DisplayName = name,
                 Description = DraftDescription.Trim(),
-                ButtonMappings = CreateMappingDictionary(
-                    selected.ButtonMappings,
-                    ButtonMappingRows),
-                AxisMappings = CreateMappingDictionary(
-                    selected.AxisMappings,
-                    AxisMappingRows),
-                AxisInversions = CreateInversionDictionary(
-                    selected.AxisInversions,
-                    AxisMappingRows),
-                DeadZones = CreateDeadZoneDictionary(
-                    selected.DeadZones,
-                    LeftStickDeadZone,
-                    RightStickDeadZone),
-                VirtualGamepadType = VirtualGamepadTypes.IsSupported(DraftVirtualGamepadType)
-                    ? DraftVirtualGamepadType
-                    : selected.VirtualGamepadType,
+                ButtonMappings = primaryMapping.ButtonMappings,
+                AxisMappings = primaryMapping.AxisMappings,
+                AxisInversions = primaryMapping.AxisInversions,
+                DeadZones = primaryMapping.DeadZones,
+                TypeMappings = typeMappings,
+                VirtualGamepadType = profileType,
                 Combos = combos,
                 UpdatedAtUtc = DateTimeOffset.UtcNow
             };
@@ -781,7 +819,18 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             UpdatedAtUtc = DateTimeOffset.UtcNow,
             ButtonMappings = new Dictionary<string, string>(selected.ButtonMappings),
             AxisMappings = new Dictionary<string, string>(selected.AxisMappings),
+            AxisInversions = new Dictionary<string, bool>(selected.AxisInversions),
             DeadZones = new Dictionary<string, double>(selected.DeadZones),
+            TypeMappings = selected.TypeMappings.ToDictionary(
+                pair => pair.Key,
+                pair => new ControllerProfileMapping
+                {
+                    ButtonMappings = new Dictionary<string, string>(pair.Value.ButtonMappings),
+                    AxisMappings = new Dictionary<string, string>(pair.Value.AxisMappings),
+                    AxisInversions = new Dictionary<string, bool>(pair.Value.AxisInversions),
+                    DeadZones = new Dictionary<string, double>(pair.Value.DeadZones)
+                },
+                StringComparer.Ordinal),
             Combos = selected.Combos.Select(combo => combo with
             {
                 ComboId = Guid.NewGuid(),
@@ -885,6 +934,21 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             StatusMessage = choice.ProfileId is null
                 ? $"Se quitó la asignación de perfil a «{controller.DisplayName}»."
                 : $"Se asignó «{choice.DisplayName}» a «{controller.DisplayName}».";
+
+            VirtualGamepadControllerViewModel? output = VirtualGamepads.FirstOrDefault(
+                candidate => candidate.Record.ControllerId == updated.ControllerId);
+            if (output?.ConnectedDevice is { } assignedDevice &&
+                _virtualGamepadService?.IsRunningFor(assignedDevice.DeviceKey) == true)
+            {
+                string? runningType = _virtualGamepadService
+                    .GetRunningVirtualGamepadType(assignedDevice.DeviceKey);
+                string desiredType = ResolveVirtualGamepadType(updated);
+                if (runningType is not null &&
+                    !string.Equals(runningType, desiredType, StringComparison.Ordinal))
+                {
+                    await RestartVirtualGamepadIfRunningAsync(output);
+                }
+            }
         }
         catch (InvalidDataException exception)
         {
@@ -998,36 +1062,46 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         }
     }
 
+    private ControllerProfileMapping GetMappingDraft(ControllerProfile? profile, string type)
+    {
+        string normalized = VirtualGamepadTypes.Normalize(type);
+        return _typeMappingDrafts.TryGetValue(normalized, out ControllerProfileMapping? draft)
+            ? draft
+            : profile?.GetMappingsFor(normalized) ?? new ControllerProfileMapping();
+    }
+
+    private void CaptureMappingDraft(string type)
+    {
+        string normalized = VirtualGamepadTypes.Normalize(type);
+        ControllerProfileMapping existing = GetMappingDraft(SelectedProfile, normalized);
+        _typeMappingDrafts[normalized] = new ControllerProfileMapping
+        {
+            ButtonMappings = CreateMappingDictionary(existing.ButtonMappings, ButtonMappingRows),
+            AxisMappings = CreateMappingDictionary(existing.AxisMappings, AxisMappingRows),
+            AxisInversions = CreateInversionDictionary(existing.AxisInversions, AxisMappingRows),
+            DeadZones = CreateDeadZoneDictionary(
+                existing.DeadZones,
+                LeftStickDeadZone,
+                RightStickDeadZone)
+        };
+    }
+
+    private Dictionary<string, ControllerProfileMapping> BuildTypeMappings(ControllerProfile selected)
+    {
+        var mappings = new Dictionary<string, ControllerProfileMapping>(StringComparer.Ordinal);
+        foreach (VirtualGamepadTypeOption option in VirtualGamepadTypeOptions)
+        {
+            mappings[option.Id] = _typeMappingDrafts.TryGetValue(option.Id, out ControllerProfileMapping? draft)
+                ? draft
+                : selected.GetMappingsFor(option.Id);
+        }
+
+        return mappings;
+    }
+
     private void LoadMappingRows(ControllerProfile? profile)
     {
-        ButtonMappingRows.Clear();
-        foreach (GamepadControlOption source in GamepadControlCatalog.Buttons)
-        {
-            string target = profile?.ButtonMappings.TryGetValue(source.Id, out string? mappedTarget) == true
-                ? NormalizeButtonTarget(mappedTarget, source.Id)
-                : source.Id;
-            ButtonMappingRows.Add(new ProfileMappingRow(
-                source,
-                GamepadControlCatalog.GetButtonTargetsFor(DraftVirtualGamepadType),
-                target));
-        }
-
-        AxisMappingRows.Clear();
-        foreach (GamepadControlOption source in GamepadControlCatalog.Axes)
-        {
-            string target = profile?.AxisMappings.TryGetValue(source.Id, out string? mappedTarget) == true
-                ? NormalizeAxisTarget(mappedTarget, source.Id)
-                    : source.Id;
-            AxisMappingRows.Add(new ProfileMappingRow(
-                source,
-                GamepadControlCatalog.Axes,
-                target,
-                profile?.AxisInversions.TryGetValue(source.Id, out bool isInverted) == true &&
-                    isInverted));
-        }
-
-        LeftStickDeadZone = profile?.DeadZones.GetValueOrDefault("leftStick") ?? 0d;
-        RightStickDeadZone = profile?.DeadZones.GetValueOrDefault("rightStick") ?? 0d;
+        LoadControlMappingRows(GetMappingDraft(profile, DraftVirtualGamepadType));
 
         ComboRows.Clear();
         foreach (ControllerCombo combo in profile?.Combos ?? [])
@@ -1041,38 +1115,49 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 combo.ActionType,
                 combo.TargetButtons));
         }
+
+        RefreshComboTargetButtons();
     }
 
-    private void RefreshButtonMappingTargets()
+    private void LoadControlMappingRows(ControllerProfileMapping? mapping)
+    {
+        ButtonMappingRows.Clear();
+        foreach (GamepadControlOption source in GamepadControlCatalog.Buttons)
+        {
+            string target = mapping?.ButtonMappings.TryGetValue(source.Id, out string? mappedTarget) == true
+                ? NormalizeButtonTarget(mappedTarget, source.Id)
+                : source.Id;
+            ButtonMappingRows.Add(new ProfileMappingRow(
+                source,
+                GamepadControlCatalog.GetButtonTargetsFor(DraftVirtualGamepadType),
+                target));
+        }
+
+        AxisMappingRows.Clear();
+        foreach (GamepadControlOption source in GamepadControlCatalog.Axes)
+        {
+            string target = mapping?.AxisMappings.TryGetValue(source.Id, out string? mappedTarget) == true
+                ? NormalizeAxisTarget(mappedTarget, source.Id)
+                    : source.Id;
+            AxisMappingRows.Add(new ProfileMappingRow(
+                source,
+                GamepadControlCatalog.Axes,
+                target,
+                mapping?.AxisInversions.TryGetValue(source.Id, out bool isInverted) == true &&
+                    isInverted));
+        }
+
+        LeftStickDeadZone = mapping?.DeadZones.GetValueOrDefault("leftStick") ?? 0d;
+        RightStickDeadZone = mapping?.DeadZones.GetValueOrDefault("rightStick") ?? 0d;
+    }
+
+    private void RefreshComboTargetButtons()
     {
         IReadOnlyList<GamepadControlOption> targets =
             GamepadControlCatalog.GetButtonTargetsFor(DraftVirtualGamepadType);
         foreach (ProfileComboRow row in ComboRows)
         {
             row.RebuildTargetButtons(targets);
-        }
-
-        foreach (ProfileMappingRow row in ButtonMappingRows)
-        {
-            row.Targets.Clear();
-            foreach (GamepadControlOption target in targets)
-            {
-                row.Targets.Add(target);
-            }
-
-            if (targets.Any(target => target.Id == row.SelectedTargetId))
-            {
-                continue;
-            }
-
-            GamepadControlOption? current = GamepadControlCatalog.ButtonTargets
-                .FirstOrDefault(target => target.Id == row.SelectedTargetId);
-            if (current is not null)
-            {
-                row.Targets.Add(new GamepadControlOption(
-                    current.Id,
-                    $"{current.DisplayName} (no compatible)"));
-            }
         }
     }
 
@@ -1288,8 +1373,10 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                     StopVirtualGamepadAsync,
                     ToggleAutoStartVirtualGamepadAsync,
                     ToggleAutoHidePhysicalGamepadAsync,
-                    ToggleKeepHiddenOnExitAsync);
+                    ToggleKeepHiddenOnExitAsync,
+                    SaveLedSettingsAsync);
                 VirtualGamepads.Add(output);
+                output.PropertyChanged += OnVirtualGamepadItemPropertyChanged;
             }
 
             ConnectedGamepad? previousDevice = output.ConnectedDevice;
@@ -1348,6 +1435,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 profileName,
                 running,
                 ResolveVirtualGamepadType(record));
+            _ = ApplyLedStateAsync(output);
             if (_isInitialized &&
                 _controllersLoaded &&
                 record.Settings.AutoStartVirtualGamepad &&
@@ -1376,6 +1464,15 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
 
         OnPropertyChanged(nameof(HasVirtualGamepads));
         OnPropertyChanged(nameof(ShowNoVirtualGamepads));
+        OnPropertyChanged(nameof(IsAnyVirtualGamepadBusy));
+    }
+
+    private void OnVirtualGamepadItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(VirtualGamepadControllerViewModel.IsStarting))
+        {
+            OnPropertyChanged(nameof(IsAnyVirtualGamepadBusy));
+        }
     }
 
     private static bool IsSamePhysicalDevice(
@@ -1475,7 +1572,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             await _virtualGamepadService.StartAsync(
                 device,
                 snapshot,
-                profile,
+                profile?.WithMappingsFor(virtualGamepadType),
                 virtualGamepadType);
             WriteAutoHideDiagnostic(
                 DiagnosticLogLevel.Information,
@@ -1490,6 +1587,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 isRunning: true,
                 virtualGamepadType);
             NotifyVirtualOutputStateChanged();
+            _ = ApplyLedStateAsync(item);
             if (item.Record.Settings.AutoHidePhysicalGamepad)
             {
                 await ApplyAutomaticHideAsync(item, device);
@@ -1592,6 +1690,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 isRunning: false,
                 ResolveVirtualGamepadType(item.Record));
             NotifyVirtualOutputStateChanged();
+            _ = ApplyLedStateAsync(item);
         }
         catch (Exception exception) when (
             exception is IOException or
@@ -1674,10 +1773,15 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         }
 
         string newType = VirtualGamepadTypes.Other(currentType);
+        item.SetStarting(true);
         try
         {
             await service.StopAsync(device.DeviceKey);
-            await service.StartAsync(device, snapshot, profile, newType);
+            await service.StartAsync(
+                device,
+                snapshot,
+                profile?.WithMappingsFor(newType),
+                newType);
             item.SetStatus(
                 $"Combo «{combo.DisplayName}»: mando virtual {VirtualGamepadTypes.DisplayName(newType)} activo.");
             item.Update(
@@ -1687,6 +1791,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 isRunning: true,
                 newType);
             NotifyVirtualOutputStateChanged();
+            _ = ApplyLedStateAsync(item);
         }
         catch (Exception exception) when (
             exception is DllNotFoundException or
@@ -1702,7 +1807,11 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             _reportError?.Invoke(item.StatusMessage, exception);
             try
             {
-                await service.StartAsync(device, snapshot, profile, currentType);
+                await service.StartAsync(
+                    device,
+                    snapshot,
+                    profile?.WithMappingsFor(currentType),
+                    currentType);
                 item.Update(
                     item.Record,
                     device,
@@ -1710,6 +1819,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                     isRunning: true,
                     currentType);
                 NotifyVirtualOutputStateChanged();
+                _ = ApplyLedStateAsync(item);
             }
             catch (Exception restartException) when (
                 restartException is InvalidOperationException or
@@ -1720,6 +1830,10 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 item.SetStatus(
                     $"Combo «{combo.DisplayName}»: la salida virtual no pudo reiniciarse: {restartException.Message}");
             }
+        }
+        finally
+        {
+            item.SetStarting(false);
         }
     }
 
@@ -1885,6 +1999,116 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         finally
         {
             item.SetStarting(false);
+        }
+    }
+
+    private async Task SaveLedSettingsAsync(
+        VirtualGamepadControllerViewModel item,
+        ControllerLedSettings ledSettings)
+    {
+        if (_controllerRepository is null)
+        {
+            item.SetStatus("No se pueden guardar las opciones de LED.");
+            return;
+        }
+
+        try
+        {
+            ControllerLedSettings normalized = ControllerLedSettings.Normalize(ledSettings);
+            ControllerRecord updated = item.Record with
+            {
+                Settings = item.Record.Settings with
+                {
+                    Led = normalized
+                },
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            };
+            await _controllerRepository.SaveAsync(updated);
+            int index = SavedControllers.IndexOf(item.Record);
+            if (index >= 0)
+            {
+                SavedControllers[index] = updated;
+            }
+
+            item.UpdateRecord(updated);
+            _onControllerUpdated(updated);
+            await ApplyLedStateAsync(item);
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            item.SetStatus($"No se pudieron guardar las opciones de LED: {exception.Message}");
+            _reportError?.Invoke(item.StatusMessage, exception);
+        }
+    }
+
+    private async Task ApplyLedStateAsync(VirtualGamepadControllerViewModel item)
+    {
+        ISonyControllerLedService? service = _ledService;
+        ConnectedGamepad? device = item.ConnectedDevice;
+        if (service is null ||
+            device?.DevicePath is null ||
+            !SonyControllerLedSupport.TryGetKind(device.VendorId, device.ProductId, out _))
+        {
+            return;
+        }
+
+        ControllerLedSettings led = ControllerLedSettings.Normalize(item.Record.Settings.Led);
+        byte red = 0, green = 0, blue = 0;
+        int? playerNumber = null;
+        switch (led.Mode)
+        {
+            case ControllerLedModes.Player:
+                playerNumber = led.PlayerNumber;
+                ControllerLedColor.TryParse(
+                    led.PlayerColors.GetValueOrDefault(led.PlayerNumber),
+                    out red,
+                    out green,
+                    out blue);
+                break;
+            case ControllerLedModes.Manual:
+                ControllerLedColor.TryParse(led.ManualColor, out red, out green, out blue);
+                break;
+            case ControllerLedModes.VirtualOutput when item.IsRunning:
+                string? runningType = _virtualGamepadService?.GetRunningVirtualGamepadType(device.DeviceKey);
+                bool isXbox = runningType == VirtualGamepadTypes.Xbox360;
+                red = 0;
+                green = isXbox ? (byte)255 : (byte)0;
+                blue = isXbox ? (byte)0 : (byte)255;
+                break;
+        }
+
+        try
+        {
+            SonyLedApplyResult result = await service.TrySetLightBarAsync(
+                device,
+                red,
+                green,
+                blue,
+                (byte)led.Brightness,
+                playerNumber);
+            if (_lastLedResults.GetValueOrDefault(device.DeviceKey) != result)
+            {
+                _lastLedResults[device.DeviceKey] = result;
+                if (result == SonyLedApplyResult.Failed)
+                {
+                    WriteAutoHideDiagnostic(
+                        DiagnosticLogLevel.Warning,
+                        $"No se pudo aplicar el color del LED. Controlador={item.Record.ControllerId}; " +
+                        $"mando={DescribeDevice(device)}.");
+                }
+            }
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+            UnauthorizedAccessException or
+            System.ComponentModel.Win32Exception or
+            InvalidOperationException)
+        {
+            WriteAutoHideDiagnostic(
+                DiagnosticLogLevel.Warning,
+                $"Error al aplicar el LED del mando. Controlador={item.Record.ControllerId}; " +
+                $"mando={DescribeDevice(device)}; error={exception.Message}");
         }
     }
 

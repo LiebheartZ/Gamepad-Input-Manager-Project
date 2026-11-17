@@ -22,9 +22,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private bool _startMinimized;
     private bool _startWithWindowsAsTask;
     private string _defaultVirtualGamepadType;
+    private string _xbox360ProfileVariant;
     private Guid? _defaultProfileId;
     private bool _restoreGamepadsOnExit = true;
     private bool _showVirtualGamepadsInAllTabs;
+    private string _closeButtonBehavior;
+    private bool _showExitConfirmation = true;
     private int _selectedCategoryIndex;
     private bool _isBusy;
     private string _statusTitle = "Ajustes cargados";
@@ -41,6 +44,15 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
 
     public IReadOnlyList<VirtualGamepadTypeOption> VirtualGamepadTypeOptions { get; } =
         VirtualGamepadTypes.Options;
+
+    public IReadOnlyList<VirtualGamepadTypeOption> Xbox360VariantOptions { get; } =
+        VirtualGamepadTypes.Xbox360VariantOptions;
+
+    public IReadOnlyList<ThemeOption> CloseButtonBehaviorOptions { get; } =
+    [
+        new(CloseButtonBehaviors.HideToTray, "Ocultar en la bandeja"),
+        new(CloseButtonBehaviors.Exit, "Cerrar GDM")
+    ];
 
     public IReadOnlyList<string> Categories { get; } =
         ["General", "Interfaz", "Mandos", "Dependencias", "Acerca de", "Debug"];
@@ -84,6 +96,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         set => SetProperty(ref _defaultVirtualGamepadType, value);
     }
 
+    public string Xbox360ProfileVariant
+    {
+        get => _xbox360ProfileVariant;
+        set => SetProperty(ref _xbox360ProfileVariant, value);
+    }
+
     public Guid? DefaultProfileId
     {
         get => _defaultProfileId;
@@ -100,6 +118,18 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     {
         get => _showVirtualGamepadsInAllTabs;
         set => SetProperty(ref _showVirtualGamepadsInAllTabs, value);
+    }
+
+    public string CloseButtonBehavior
+    {
+        get => _closeButtonBehavior;
+        set => SetProperty(ref _closeButtonBehavior, value);
+    }
+
+    public bool ShowExitConfirmation
+    {
+        get => _showExitConfirmation;
+        set => SetProperty(ref _showExitConfirmation, value);
     }
 
     public int SelectedCategoryIndex
@@ -176,9 +206,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         _defaultVirtualGamepadType = VirtualGamepadTypes.IsSupported(settings.DefaultVirtualGamepadType)
             ? settings.DefaultVirtualGamepadType
             : VirtualGamepadTypes.Default;
+        _xbox360ProfileVariant = VirtualGamepadTypes.NormalizeXbox360Variant(
+            settings.Xbox360ProfileVariant);
         _defaultProfileId = settings.DefaultProfileId;
         _restoreGamepadsOnExit = settings.RestoreGamepadsOnExit;
         _showVirtualGamepadsInAllTabs = settings.ShowVirtualGamepadsInAllTabs;
+        _closeButtonBehavior = CloseButtonBehaviors.Normalize(settings.CloseButtonBehavior);
+        _showExitConfirmation = settings.ShowExitConfirmation;
 
         _saveCommand = new AsyncCommand(SaveAsync, () => !IsBusy);
         _restoreDefaultsCommand = new AsyncCommand(RestoreDefaultsAsync, () => !IsBusy);
@@ -201,6 +235,23 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         _applySettings(settings);
     }
 
+    public async Task SetShowExitConfirmationAsync(bool showExitConfirmation)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        var settings = _currentSettings with
+        {
+            ShowExitConfirmation = showExitConfirmation
+        };
+        await _settingsRepository.SaveAsync(settings);
+        _currentSettings = settings;
+        ShowExitConfirmation = settings.ShowExitConfirmation;
+        _applySettings(settings);
+    }
+
     public Task SaveAsync() => PersistAsync(
         _currentSettings with
         {
@@ -211,9 +262,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             DefaultVirtualGamepadType = VirtualGamepadTypes.IsSupported(DefaultVirtualGamepadType)
                 ? DefaultVirtualGamepadType
                 : VirtualGamepadTypes.Default,
+            Xbox360ProfileVariant = VirtualGamepadTypes.NormalizeXbox360Variant(Xbox360ProfileVariant),
             DefaultProfileId = DefaultProfileId == Guid.Empty ? null : DefaultProfileId,
             RestoreGamepadsOnExit = RestoreGamepadsOnExit,
-            ShowVirtualGamepadsInAllTabs = ShowVirtualGamepadsInAllTabs
+            ShowVirtualGamepadsInAllTabs = ShowVirtualGamepadsInAllTabs,
+            CloseButtonBehavior = CloseButtonBehaviors.Normalize(CloseButtonBehavior),
+            ShowExitConfirmation = ShowExitConfirmation
         },
         "Se guardaron los ajustes.",
         "Ajustes guardados");
@@ -265,9 +319,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             StartMinimized = settings.StartMinimized;
             StartWithWindowsAsTask = settings.StartWithWindowsAsTask;
             DefaultVirtualGamepadType = settings.DefaultVirtualGamepadType;
+            Xbox360ProfileVariant = settings.Xbox360ProfileVariant;
             DefaultProfileId = settings.DefaultProfileId;
             RestoreGamepadsOnExit = settings.RestoreGamepadsOnExit;
             ShowVirtualGamepadsInAllTabs = settings.ShowVirtualGamepadsInAllTabs;
+            CloseButtonBehavior = settings.CloseButtonBehavior;
+            ShowExitConfirmation = settings.ShowExitConfirmation;
             _applySettings(settings);
             StatusTitle = successTitle;
             StatusMessage = successMessage;

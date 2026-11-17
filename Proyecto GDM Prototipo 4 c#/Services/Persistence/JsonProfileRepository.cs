@@ -256,7 +256,32 @@ public sealed class JsonProfileRepository : IProfileRepository
         {
             throw new InvalidDataException("El perfil contiene combos no válidos.");
         }
+
+        if (profile.TypeMappings is null ||
+            profile.TypeMappings.Any(pair =>
+                pair.Value is null ||
+                !VirtualGamepadTypes.IsSupported(pair.Key) ||
+                !IsValidMapping(pair.Value)))
+        {
+            throw new InvalidDataException(
+                "El perfil contiene configuraciones de remapeo por tipo no válidas.");
+        }
     }
+
+    private static bool IsValidMapping(ControllerProfileMapping mappings) =>
+        mappings.ButtonMappings is not null &&
+        mappings.AxisMappings is not null &&
+        mappings.AxisInversions is not null &&
+        mappings.DeadZones is not null &&
+        mappings.ButtonMappings.All(pair =>
+            !string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value)) &&
+        mappings.AxisMappings.All(pair =>
+            !string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value)) &&
+        mappings.AxisInversions.All(pair => !string.IsNullOrWhiteSpace(pair.Key)) &&
+        mappings.DeadZones.All(pair =>
+            !string.IsNullOrWhiteSpace(pair.Key) &&
+            double.IsFinite(pair.Value) &&
+            pair.Value is >= 0 and <= 1);
 
     private static void Validate(ProfileIndex index)
     {

@@ -60,6 +60,19 @@ public sealed class JsonAppSettingsRepository : IAppSettingsRepository
                 "El tipo de mando virtual predeterminado no es compatible.");
         }
 
+        if (VirtualGamepadTypes.NormalizeXbox360Variant(settings.Xbox360ProfileVariant) !=
+            settings.Xbox360ProfileVariant)
+        {
+            throw new InvalidDataException(
+                "La variante de perfil Xbox 360 no es compatible.");
+        }
+
+        if (!CloseButtonBehaviors.IsSupported(settings.CloseButtonBehavior))
+        {
+            throw new InvalidDataException(
+                "El comportamiento del botón de cierre no es compatible.");
+        }
+
         if (settings.DefaultProfileId == Guid.Empty)
         {
             throw new InvalidDataException(

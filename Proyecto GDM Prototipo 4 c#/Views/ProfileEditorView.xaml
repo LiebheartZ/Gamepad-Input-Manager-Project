@@ -64,14 +64,17 @@
         <TextBlock Margin="0,6,0,0"
                    FontSize="11"
                    Foreground="{DynamicResource SecondaryTextBrush}"
-                   Text="Cambiar el tipo reinicia las salidas virtuales que usen este perfil."
+                   Text="Cambiar el tipo reinicia las salidas virtuales que usen este perfil. El remapeo, las inversiones y las zonas muertas se guardan por separado para cada tipo."
                    TextWrapping="Wrap" />
-        <Expander Margin="0,14,0,0"
-                  Header="Remapeo para el mando virtual">
+        <Expander Margin="0,14,0,0">
+            <Expander.Header>
+                <TextBlock FontWeight="SemiBold"
+                           Text="{Binding DraftVirtualGamepadTypeName, StringFormat='Remapeo para {0}'}" />
+            </Expander.Header>
             <StackPanel Margin="0,8,0,0">
                 <TextBlock Margin="0,0,0,10"
                            Foreground="{DynamicResource SecondaryTextBrush}"
-                           Text="Estos cambios solo afectan la salida del mando virtual. Los controles no remapeados conservan su asignación estándar; varios controles físicos pueden compartir un destino."
+                           Text="Estas opciones se guardan por separado para cada tipo de mando virtual. Los cambios solo afectan la salida del mando virtual; los controles no remapeados conservan su asignación estándar y varios controles físicos pueden compartir un destino."
                            TextWrapping="Wrap" />
                 <TextBlock Margin="0,0,0,6"
                            FontWeight="SemiBold"

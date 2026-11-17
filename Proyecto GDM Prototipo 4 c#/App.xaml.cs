@@ -26,6 +26,7 @@ public partial class App : System.Windows.Application
     private bool _settingsLoadedSuccessfully;
     private SingleInstanceCoordinator? _singleInstanceCoordinator;
     private bool _activationPending;
+    private GDM.ViewModels.SettingsViewModel? _settingsViewModel;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -157,6 +158,7 @@ public partial class App : System.Windows.Application
             },
             logService,
             windowsStartupService);
+        _settingsViewModel = settingsViewModel;
         var gamepadDetectionService = new Sdl2GamepadDetectionService();
         var controllerRepository = new JsonControllerRepository(StoragePaths);
         var profileRepository = new JsonProfileRepository(StoragePaths);
@@ -233,7 +235,9 @@ public partial class App : System.Windows.Application
                 MessageBoxImage.Warning);
         }
 
-        var virtualGamepadService = new HidMaestroVirtualGamepadService(gamepadDetectionService);
+        var virtualGamepadService = new HidMaestroVirtualGamepadService(
+            gamepadDetectionService,
+            () => Settings.Xbox360ProfileVariant);
         var window = new MainWindow(
             Settings,
             gamepadDetectionService,
@@ -432,7 +436,7 @@ public partial class App : System.Windows.Application
         Resources[resourceKey] = new SolidColorBrush(color);
     }
 
-    private async void HandleWindowClosing(object? sender, CancelEventArgs e)
+    private void HandleWindowClosing(object? sender, CancelEventArgs e)
     {
         if (_allowWindowClose)
         {
@@ -447,11 +451,28 @@ public partial class App : System.Windows.Application
         if (!window.IsExitRequested)
         {
             e.Cancel = true;
-            window.HideToTray();
-            return;
+            if (CloseButtonBehaviors.Normalize(Settings.CloseButtonBehavior) ==
+                CloseButtonBehaviors.Exit)
+            {
+                window.MarkExitRequested();
+            }
+            else
+            {
+                window.HideToTray();
+                return;
+            }
+        }
+        else
+        {
+            e.Cancel = true;
         }
 
-        e.Cancel = true;
+        window.Dispatcher.BeginInvoke(
+            new Action(() => _ = HandleExitRequestedAsync(window)));
+    }
+
+    private async Task HandleExitRequestedAsync(MainWindow window)
+    {
         if (_isHandlingWindowClose)
         {
             return;
@@ -461,6 +482,21 @@ public partial class App : System.Windows.Application
 
         try
         {
+            if (!window.IsElevatedRelaunch && Settings.ShowExitConfirmation)
+            {
+                (bool confirmed, bool dontShowAgain) = ExitConfirmationWindow.ShowConfirmation();
+                if (!confirmed)
+                {
+                    window.CancelExitRequest();
+                    return;
+                }
+
+                if (dontShowAgain)
+                {
+                    await PersistShowExitConfirmationAsync(false);
+                }
+            }
+
             if (!window.IsElevatedRelaunch)
             {
                 try
@@ -489,6 +525,7 @@ public partial class App : System.Windows.Application
                         MessageBoxImage.Warning);
                     if (result != MessageBoxResult.Yes)
                     {
+                        window.CancelExitRequest();
                         return;
                     }
                 }
@@ -503,6 +540,15 @@ public partial class App : System.Windows.Application
             _ = window.Dispatcher.BeginInvoke(
                 DispatcherPriority.Background,
                 new Action(window.Close));
+        }
+        catch (Exception exception)
+        {
+            window.CancelExitRequest();
+            LogService?.Write(
+                DiagnosticLogLevel.Error,
+                "Cierre",
+                "No se pudo completar la solicitud de cierre de GDM.",
+                exception);
         }
         finally
         {
@@ -541,6 +587,36 @@ public partial class App : System.Windows.Application
         {
             LogService?.Write(DiagnosticLogLevel.Error, "Configuración", "No hay permisos para guardar los ajustes.", exception);
             ShowSettingsWarning(exception);
+        }
+    }
+
+    private async Task PersistShowExitConfirmationAsync(bool showExitConfirmation)
+    {
+        try
+        {
+            if (_settingsViewModel is not null)
+            {
+                await _settingsViewModel.SetShowExitConfirmationAsync(showExitConfirmation);
+                return;
+            }
+
+            Settings = Settings with { ShowExitConfirmation = showExitConfirmation };
+            if (_settingsRepository is not null)
+            {
+                await _settingsRepository.SaveAsync(Settings);
+            }
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+            InvalidDataException or
+            UnauthorizedAccessException or
+            InvalidOperationException)
+        {
+            LogService?.Write(
+                DiagnosticLogLevel.Warning,
+                "Configuración",
+                "No se pudo guardar la preferencia del aviso de cierre.",
+                exception);
         }
     }
 
