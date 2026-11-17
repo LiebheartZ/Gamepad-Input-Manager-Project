@@ -12,7 +12,7 @@ GDM es una aplicación portable para Windows que detecta mandos físicos, los id
 - **Ocultamiento con HidHide**: esconde el mando físico a otras aplicaciones (para evitar doble entrada) manteniendo el acceso desde GDM, con restauración automática al cerrar.
 - **Hot-plug**: detecta conexiones y desconexiones en tiempo real, con inicio automático de salidas al conectar.
 - **Tester**: vista en vivo de botones y ejes del mando seleccionado.
-- **Extras para Sony**: control del LED del DualShock 4 / DualSense (color por jugador, color manual, según mando virtual) y **apagado por software** del mando Bluetooth (como DS4Windows).
+- **Extras para Sony**: control del LED del DualShock 4 / DualSense (color por jugador, color manual, según mando virtual) y **apagado por software** del mando Bluetooth
 - **Auto-actualización**: descarga e instala nuevas versiones desde GitHub Releases con un clic (o automáticamente al iniciar, configurable).
 
 ## Requisitos
@@ -49,7 +49,6 @@ Las notas técnicas detalladas del desarrollo están en [`README-TECNICO.md`](RE
 - [SDL2](https://www.libsdl.org/) — detección y lectura de mandos.
 - [HIDMaestro](https://github.com/nefarius/HIDMaestro) — mandos virtuales Xbox 360 / DualShock 4.
 - [HidHide](https://github.com/ViGEm/HidHide) (ViGEm) — ocultamiento de dispositivos HID.
-- Inspiración funcional: [DS4Windows](https://github.com/Ryochan7/DS4Windows).
 
 ## Licencia
 
