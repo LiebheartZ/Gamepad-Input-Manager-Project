@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Exec(python)",
+      "Exec(py)",
+      "Exec(ls)",
+      "Exec(dir)",
+      "Exec(mkdir)",
+      "Exec(dotnet build)",
+      "Exec(taskkill)",
+      "Exec(xcopy)",
+      "Exec(ren)",
+      "Exec(rmdir)",
+      "Exec(Remove-Item)",
+      "Exec(dotnet clean)",
+      "Exec(dotnet run)",
+      "Exec(dotnet add)",
+      "Exec(dotnet remove)",
+      "Exec(Get-ChildItem)",
+      "Exec(Get-Location)",
+      "Exec(Test-Path)",
+      "Exec(Rename-Item)",
+      "Exec(Select-Object)",
+      "Exec(Measure-Object)",
+      "Exec(dotnet)"
+    ]
+  }
+}
