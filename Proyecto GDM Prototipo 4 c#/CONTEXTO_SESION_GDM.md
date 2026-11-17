@@ -240,3 +240,9 @@ Antes de cambiar un servicio SDL, revisar cobertura y ciclo de vida de inicializ
 ## 0.16.21 - Ahorro de CPU con ventana oculta
 
 Se revirtio el experimento de hilo dedicado SDL (estado congelado en RawInput). Se anadio IsAppWindowHidden en MainWindowViewModel: si la ventana esta minimizada/oculta y no hay salida virtual activa, el tick de entrada retorna sin trabajar, las lecturas del Tester se omiten y el sondeo de dispositivos (RefreshDevicesAsync) se salta; el reenvio fisico->virtual sigue activo siempre que haya salida virtual. BuildCheck75.
+
+## 0.16.22 - Repo publico, token eliminado
+
+El repo paso a publico: se elimino EmbeddedAccessToken de GitHubUpdateService (las peticiones a la API de GitHub ahora van sin autenticacion; se conserva el parametro opcional accessTokenProvider por si el repo vuelve a ser privado). UpdateViewModel ahora muestra aviso y registra en log cuando un release no tiene asset .zip (antes fallaba en silencio - el release 0.16.21 se publico sin zip). README actualizado. OJO: los binarios ya publicados (0.16.21 y anteriores) aun llevan el token embebido; si se revoca el PAT, sus chequeos de actualizacion fallaran con 401.
+
+BuildCheck76/77.

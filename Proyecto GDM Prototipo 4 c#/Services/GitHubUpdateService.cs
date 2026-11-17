@@ -12,9 +12,6 @@ public sealed class GitHubUpdateService : IAppUpdateService
 {
     private const string RepositorySlug = "LiebheartZ/Gamepad-Input-Manager-Project";
 
-    // Token de solo lectura (Contents: read) incrustado para que el actualizador
-    // funcione sin configuracion. Si se filtra, revocarlo en GitHub y generar otro.
-    private const string EmbeddedAccessToken = "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";
     private static readonly HttpClient SharedClient = CreateClient();
     private readonly string _updatesDirectory;
     private readonly Func<string?>? _accessTokenProvider;
@@ -228,11 +225,6 @@ public sealed class GitHubUpdateService : IAppUpdateService
     {
         var request = new HttpRequestMessage(HttpMethod.Get, url);
         string? token = _accessTokenProvider?.Invoke()?.Trim();
-        if (string.IsNullOrEmpty(token))
-        {
-            token = EmbeddedAccessToken;
-        }
-
         if (!string.IsNullOrEmpty(token))
         {
             request.Headers.Authorization =

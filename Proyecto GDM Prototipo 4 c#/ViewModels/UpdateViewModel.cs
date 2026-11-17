@@ -240,6 +240,13 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
         {
             StatusTitle = "No hay paquete para instalar";
             StatusMessage = "La versión publicada no incluye un archivo .zip descargable.";
+            _appLogService?.Write(
+                DiagnosticLogLevel.Warning,
+                "Actualizaciones",
+                $"El release {(release is null ? "-" : release.TagName)} no tiene un asset .zip; no se puede instalar.");
+            Views.AppDialog.ShowWarning(
+                "Actualización no disponible",
+                "El release publicado no incluye el archivo .zip de la aplicación. Vuelve a publicar el release adjuntando el .zip.");
             return;
         }
 
