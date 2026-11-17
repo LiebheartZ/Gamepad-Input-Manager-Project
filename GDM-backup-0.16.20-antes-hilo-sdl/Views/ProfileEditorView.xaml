@@ -1,0 +1,284 @@
+<UserControl x:Class="GDM.Views.ProfileEditorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="Transparent">
+    <StackPanel>
+        <TextBlock FontSize="18"
+                   FontWeight="SemiBold"
+                   Text="Detalles del perfil" />
+        <WrapPanel Margin="0,14,0,0">
+            <Button MinWidth="100"
+                    Margin="0,0,8,8"
+                    Padding="12,7"
+                    Command="{Binding CreateCommand}"
+                    Content="Nuevo" />
+            <Button MinWidth="100"
+                    Margin="0,0,8,8"
+                    Padding="12,7"
+                    Command="{Binding SaveCommand}"
+                    Content="Guardar" />
+            <Button MinWidth="100"
+                    Margin="0,0,8,8"
+                    Padding="12,7"
+                    Command="{Binding DuplicateCommand}"
+                    Content="Duplicar" />
+            <Button MinWidth="100"
+                    Margin="0,0,8,8"
+                    Padding="12,7"
+                    Command="{Binding DeleteCommand}"
+                    Content="Eliminar" />
+        </WrapPanel>
+        <TextBlock Margin="0,8,0,0"
+                   FontSize="11"
+                   Foreground="{DynamicResource SecondaryTextBrush}"
+                   Text="Escribe un nombre y pulsa Nuevo para crear un perfil; Guardar aplica los cambios al perfil seleccionado."
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,14,0,5"
+                   FontSize="12"
+                   Foreground="{DynamicResource SecondaryTextBrush}"
+                   Text="Nombre" />
+        <TextBox MaxLength="80"
+                 Padding="8,6"
+                 Text="{Binding DraftName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <TextBlock Margin="0,12,0,5"
+                   FontSize="12"
+                   Foreground="{DynamicResource SecondaryTextBrush}"
+                   Text="Descripción" />
+        <TextBox MinHeight="76"
+                 MaxLength="500"
+                 Padding="8,6"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto"
+                 Text="{Binding DraftDescription, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+        <TextBlock Margin="0,12,0,5"
+                   FontSize="12"
+                   Foreground="{DynamicResource SecondaryTextBrush}"
+                   Text="Tipo de mando virtual" />
+        <ComboBox Width="220"
+                  HorizontalAlignment="Left"
+                  ItemsSource="{Binding VirtualGamepadTypeOptions}"
+                  DisplayMemberPath="DisplayName"
+                  SelectedValuePath="Id"
+                  SelectedValue="{Binding DraftVirtualGamepadType, Mode=TwoWay}" />
+        <TextBlock Margin="0,6,0,0"
+                   FontSize="11"
+                   Foreground="{DynamicResource SecondaryTextBrush}"
+                   Text="Cambiar el tipo reinicia las salidas virtuales que usen este perfil. El remapeo, las inversiones y las zonas muertas se guardan por separado para cada tipo."
+                   TextWrapping="Wrap" />
+        <Expander Margin="0,14,0,0">
+            <Expander.Header>
+                <TextBlock FontWeight="SemiBold"
+                           Text="{Binding DraftVirtualGamepadTypeName, StringFormat='Remapeo para {0}'}" />
+            </Expander.Header>
+            <StackPanel Margin="0,8,0,0">
+                <TextBlock Margin="0,0,0,10"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           Text="Estas opciones se guardan por separado para cada tipo de mando virtual. Los cambios solo afectan la salida del mando virtual; los controles no remapeados conservan su asignación estándar y varios controles físicos pueden compartir un destino."
+                           TextWrapping="Wrap" />
+                <TextBlock Margin="0,0,0,6"
+                           FontWeight="SemiBold"
+                           Text="Botones" />
+                <ItemsControl ItemsSource="{Binding ButtonMappingRows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="180" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center"
+                                           Text="{Binding SourceDisplayName}" />
+                                <ComboBox Grid.Column="2"
+                                          ItemsSource="{Binding Targets}"
+                                          DisplayMemberPath="DisplayName"
+                                          SelectedValuePath="Id"
+                                          SelectedValue="{Binding SelectedTargetId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Margin="0,10,0,4"
+                           FontWeight="SemiBold"
+                           Text="Zona muerta de sticks" />
+                <Grid Margin="0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="55" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock VerticalAlignment="Center"
+                               Text="Stick izquierdo" />
+                    <Slider Grid.Column="1"
+                            Minimum="0"
+                            Maximum="0.5"
+                            TickFrequency="0.01"
+                            IsSnapToTickEnabled="True"
+                            Value="{Binding LeftStickDeadZone, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Grid.Column="2"
+                               HorizontalAlignment="Right"
+                               VerticalAlignment="Center"
+                               Text="{Binding LeftStickDeadZone, StringFormat={}{0:P0}}" />
+                </Grid>
+                <Grid Margin="0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="55" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock VerticalAlignment="Center"
+                               Text="Stick derecho" />
+                    <Slider Grid.Column="1"
+                            Minimum="0"
+                            Maximum="0.5"
+                            TickFrequency="0.01"
+                            IsSnapToTickEnabled="True"
+                            Value="{Binding RightStickDeadZone, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Grid.Column="2"
+                               HorizontalAlignment="Right"
+                               VerticalAlignment="Center"
+                               Text="{Binding RightStickDeadZone, StringFormat={}{0:P0}}" />
+                </Grid>
+                <TextBlock Margin="0,12,0,6"
+                           FontWeight="SemiBold"
+                           Text="Ejes y gatillos" />
+                <ItemsControl ItemsSource="{Binding AxisMappingRows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="180" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock VerticalAlignment="Center"
+                                           Text="{Binding SourceDisplayName}" />
+                                <ComboBox Grid.Column="2"
+                                          ItemsSource="{Binding Targets}"
+                                          DisplayMemberPath="DisplayName"
+                                          SelectedValuePath="Id"
+                                          SelectedValue="{Binding SelectedTargetId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <CheckBox Grid.Column="3"
+                                          Margin="8,0,0,0"
+                                          VerticalAlignment="Center"
+                                          Content="Invertir"
+                                          IsEnabled="{Binding CanInvert}"
+                                          IsChecked="{Binding IsInverted, Mode=TwoWay}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Expander>
+        <Expander Margin="0,14,0,0"
+                  Header="Combos de botones">
+            <StackPanel Margin="0,8,0,0">
+                <TextBlock Margin="0,0,0,10"
+                           Foreground="{DynamicResource SecondaryTextBrush}"
+                           Text="Un combo se dispara al pulsar a la vez los botones elegidos, o tras mantenerlos durante el tiempo indicado. Solo se evalúan mientras la salida virtual del mando está activa."
+                           TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding ComboRows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Margin="0,0,0,10"
+                                    Padding="10"
+                                    Background="{DynamicResource PanelRaisedBrush}"
+                                    BorderBrush="{DynamicResource BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox MaxLength="80"
+                                                 Padding="6,4"
+                                                 ToolTip="Nombre del combo (opcional)"
+                                                 Text="{Binding DisplayName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        <Button Grid.Column="1"
+                                                Margin="8,0,0,0"
+                                                Padding="10,4"
+                                                Command="{Binding DataContext.Profiles.RemoveComboCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"
+                                                Content="Eliminar" />
+                                    </Grid>
+                                    <TextBlock Margin="0,10,0,4"
+                                               FontWeight="SemiBold"
+                                               Text="Botones del combo" />
+                                    <ItemsControl ItemsSource="{Binding TriggerButtons}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <CheckBox Margin="0,0,12,4"
+                                                          FontSize="12"
+                                                          Content="{Binding DisplayName}"
+                                                          IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <StackPanel Orientation="Horizontal"
+                                                Margin="0,6,0,0">
+                                        <CheckBox VerticalAlignment="Center"
+                                                  Content="Mantener pulsados"
+                                                  IsChecked="{Binding RequiresHold, Mode=TwoWay}" />
+                                        <TextBox Width="70"
+                                                 Margin="10,0,0,0"
+                                                 Padding="6,4"
+                                                 VerticalContentAlignment="Center"
+                                                 IsEnabled="{Binding RequiresHold}"
+                                                 ToolTip="Milisegundos (1-10000)"
+                                                 Text="{Binding HoldMilliseconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Margin="6,0,0,0"
+                                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                                   Text="ms" />
+                                    </StackPanel>
+                                    <TextBlock Margin="0,10,0,4"
+                                               FontWeight="SemiBold"
+                                               Text="Acción" />
+                                    <ComboBox Width="320"
+                                              HorizontalAlignment="Left"
+                                              ItemsSource="{Binding ActionOptions}"
+                                              DisplayMemberPath="DisplayName"
+                                              SelectedValuePath="Id"
+                                              SelectedValue="{Binding ActionType, Mode=TwoWay}" />
+                                    <TextBlock Margin="0,10,0,4"
+                                               FontWeight="SemiBold"
+                                               Text="Botones que pulsa en el mando virtual" />
+                                    <ItemsControl ItemsSource="{Binding TargetButtons}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <CheckBox Margin="0,0,12,4"
+                                                          FontSize="12"
+                                                          Content="{Binding DisplayName}"
+                                                          IsChecked="{Binding IsSelected, Mode=TwoWay}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button HorizontalAlignment="Left"
+                        MinWidth="120"
+                        Margin="0,0,0,8"
+                        Padding="12,7"
+                        Command="{Binding AddComboCommand}"
+                        Content="Añadir combo" />
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</UserControl>

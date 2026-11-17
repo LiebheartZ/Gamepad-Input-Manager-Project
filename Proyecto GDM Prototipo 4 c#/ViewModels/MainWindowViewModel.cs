@@ -4,11 +4,13 @@ using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using GDM.Models;
 using GDM.Services;
 using GDM.Services.Abstractions;
+using GDM.Views;
 
 namespace GDM.ViewModels;
 
@@ -16,6 +18,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
     private static readonly TimeSpan NormalDevicePollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan VirtualOutputDevicePollingInterval = TimeSpan.FromMilliseconds(500);
+
+    private TimeSpan VirtualInputPollInterval =>
+        TimeSpan.FromMilliseconds(Math.Clamp(_settingsViewModel?.VirtualInputPollIntervalMs ?? 8, 4, 100));
     private readonly IGamepadDetectionService? _gamepadDetectionService;
     private readonly IAppLogService? _appLogService;
     private readonly IControllerRepository? _controllerRepository;
@@ -303,6 +308,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     HidHide.UpdateDevices(GetHidHideVisibleDevices(ConnectedGamepads));
                     RebuildControllerItems();
                 }
+                if (args.PropertyName == nameof(SettingsViewModel.VirtualInputPollIntervalMs) &&
+                    Profiles.IsAnyVirtualGamepadRunning)
+                {
+                    _testerInputTimer.Interval = VirtualInputPollInterval;
+                }
             };
         }
         SavedControllers.CollectionChanged += (_, _) =>
@@ -394,6 +404,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     DiagnosticLogLevel.Information,
                     "Actualizaciones",
                     "Se detectó una versión nueva de GDM en GitHub.");
+                await PromptUpdateNotificationAsync();
             }
         }
         catch (Exception exception)
@@ -406,6 +417,45 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    private async Task PromptUpdateNotificationAsync()
+    {
+        if (_settingsViewModel?.SkipUpdateNotifications == true)
+        {
+            return;
+        }
+
+        AppReleaseInfo? release = Updates.AvailableUpdate;
+        if (release is null)
+        {
+            return;
+        }
+
+        (bool installRequested, bool dontShowAgain) = UpdateAvailableWindow.ShowPrompt(
+            System.Windows.Application.Current?.MainWindow,
+            release.Version,
+            release.TagName);
+
+        if (dontShowAgain && _settingsViewModel is not null)
+        {
+            try
+            {
+                await _settingsViewModel.SetSkipUpdateNotificationsAsync(true);
+            }
+            catch (Exception exception)
+            {
+                _appLogService?.Write(
+                    DiagnosticLogLevel.Warning,
+                    "Actualizaciones",
+                    "No se pudo guardar la preferencia de avisos de actualización.",
+                    exception);
+            }
+        }
+
+        if (installRequested)
+        {
+            await Updates.InstallAvailableUpdateAsync();
+        }
+    }
     private void RequestUpdateInstallExit()
     {
         if (System.Windows.Application.Current is App app)
@@ -503,7 +553,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
             HidHide.UpdateDevices(GetHidHideVisibleDevices(devices));
             ConnectedGamepad[] displayDevices = MergeHiddenDevices(devices);
-            if (!ConnectedGamepads.SequenceEqual(displayDevices))
+            bool devicesChanged = !ConnectedGamepads.SequenceEqual(displayDevices);
+            if (devicesChanged)
             {
                 ConnectedGamepads.Clear();
                 foreach (ConnectedGamepad device in displayDevices)
@@ -512,7 +563,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 }
             }
             Tester.UpdateDevices(displayDevices);
-            RebuildControllerItems();
+            if (devicesChanged)
+            {
+                RebuildControllerItems();
+            }
 
             int hiddenCount = displayDevices.Count(device => device.IsHiddenByGdm);
             StatusTitle = devices.Count == 0
@@ -749,7 +803,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             try
             {
                 if (_isMonitoring &&
-                    (_controllerRepository is null || _isControllerDataLoaded))
+                    (_controllerRepository is null || _isControllerDataLoaded) &&
+                    !(IsAppWindowHidden && !Profiles.IsAnyVirtualGamepadRunning))
                 {
                     await RefreshDevicesAsync();
                 }
@@ -761,13 +816,31 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }));
     }
 
+    private bool IsAppWindowHidden
+    {
+        get
+        {
+            Window? window = System.Windows.Application.Current?.MainWindow;
+            return window is null || !window.IsVisible ||
+                window.WindowState == WindowState.Minimized;
+        }
+    }
+
     private async void OnTesterInputTimerTick(object? sender, EventArgs e)
     {
+        bool virtualOutputActive =
+            Profiles.IsAnyVirtualGamepadRunning || Tester.IsVirtualGamepadRunning;
+        bool windowHidden = IsAppWindowHidden;
+
+        if (windowHidden && !virtualOutputActive)
+        {
+            return;
+        }
+
         if (!IsTesterSection &&
             !IsProfilesSection &&
             !IsHidHideSection &&
-            !Tester.IsVirtualGamepadRunning &&
-            !Profiles.IsAnyVirtualGamepadRunning)
+            !virtualOutputActive)
         {
             return;
         }
@@ -775,7 +848,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         try
         {
             await Profiles.ReadVirtualGamepadInputsAsync();
-            await Tester.ReadSelectedInputAsync();
+            if (!windowHidden &&
+                (IsTesterSection || Tester.IsVirtualGamepadRunning))
+            {
+                await Tester.ReadSelectedInputAsync();
+            }
         }
         catch (DllNotFoundException exception)
         {
@@ -820,7 +897,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             if (Tester.IsVirtualGamepadRunning)
             {
-                _testerInputTimer.Interval = TimeSpan.FromMilliseconds(8);
+                _testerInputTimer.Interval = VirtualInputPollInterval;
                 _testerInputTimer.Start();
             }
             else
@@ -867,7 +944,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         UpdateDevicePollingInterval();
         if (Profiles.IsAnyVirtualGamepadRunning)
         {
-            _testerInputTimer.Interval = TimeSpan.FromMilliseconds(8);
+            _testerInputTimer.Interval = VirtualInputPollInterval;
             _testerInputTimer.Start();
         }
         else
@@ -955,7 +1032,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             StartMonitoring();
             if (Profiles.IsAnyVirtualGamepadRunning)
             {
-                _testerInputTimer.Interval = TimeSpan.FromMilliseconds(8);
+                _testerInputTimer.Interval = VirtualInputPollInterval;
                 _testerInputTimer.Start();
             }
             else if (CurrentSection is "Tester" or "Perfiles" or "HidHide")

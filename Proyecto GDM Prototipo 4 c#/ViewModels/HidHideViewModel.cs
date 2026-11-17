@@ -55,15 +55,44 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
         var connectedKeys = connectedDevices
             .Select(device => device.DeviceKey)
             .ToHashSet(StringComparer.Ordinal);
-        Devices.Clear();
+        bool canManage = CanManageDevices;
+
+        var targetStates = new List<(ConnectedGamepad Device, bool Hidden, HidHideControllerItem? Item)>(
+            connectedDevices.Length);
         foreach (ConnectedGamepad device in connectedDevices)
         {
             bool hidden = !string.IsNullOrWhiteSpace(device.DevicePath) &&
                 _service.IsHiddenByGdm(device.DevicePath);
             ConnectedGamepad displayDevice = device with { IsHiddenByGdm = hidden };
-            if (existing.TryGetValue(device.DeviceKey, out HidHideControllerItem? item))
+            existing.TryGetValue(device.DeviceKey, out HidHideControllerItem? item);
+            targetStates.Add((displayDevice, hidden, item));
+        }
+
+        foreach (HidHideControllerItem item in existing.Values)
+        {
+            if (!connectedKeys.Contains(item.Device.DeviceKey) && item.IsHiddenByGdm)
             {
-                item.Update(displayDevice, hidden, CanManageDevices);
+                targetStates.Add((item.Device, true, item));
+            }
+        }
+
+        if (Devices.Count == targetStates.Count &&
+            Devices.Select((entry, index) =>
+                {
+                    (ConnectedGamepad device, bool hidden, _) = targetStates[index];
+                    return entry.Device == device &&
+                        entry.IsHiddenByGdm == hidden;
+                }).All(equal => equal))
+        {
+            return;
+        }
+
+        Devices.Clear();
+        foreach ((ConnectedGamepad displayDevice, bool hidden, HidHideControllerItem? item) in targetStates)
+        {
+            if (item is not null)
+            {
+                item.Update(displayDevice, hidden, canManage);
                 Devices.Add(item);
             }
             else
@@ -71,17 +100,8 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
                 Devices.Add(new HidHideControllerItem(
                     displayDevice,
                     hidden,
-                    CanManageDevices,
+                    canManage,
                     ToggleDeviceAsync));
-            }
-        }
-
-        foreach (HidHideControllerItem item in existing.Values)
-        {
-            if (!connectedKeys.Contains(item.Device.DeviceKey) && item.IsHiddenByGdm)
-            {
-                item.Update(item.Device, isHidden: true, CanManageDevices);
-                Devices.Add(item);
             }
         }
 

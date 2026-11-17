@@ -11,6 +11,9 @@ public static class UpdateInstaller
         string targetDirectory,
         int ownerProcessId)
     {
+        sourceDirectory = sourceDirectory.TrimEnd('\\', '/');
+        targetDirectory = targetDirectory.TrimEnd('\\', '/');
+
         string scriptPath = Path.Combine(
             Path.GetTempPath(),
             $"gdm-update-{Guid.NewGuid():N}.cmd");

@@ -1032,6 +1032,7 @@
                         <TabItem Header="Dependencias" />
                         <TabItem Header="Acerca de" />
                         <TabItem Header="Actualizaciones" />
+                        <TabItem Header="Debug" />
                     </TabControl>
                     <Border Margin="0,12,0,0"
                             MinHeight="290"
@@ -1277,6 +1278,31 @@
                                            FontSize="11"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
                                            Text="Por defecto los mandos virtuales de HIDMaestro solo aparecen en Mandos y Tester, marcados como «Mando virtual». Activa esta opción para verlos también en HidHide y el resto de listas de dispositivos."
+                                           TextWrapping="Wrap" />
+                                <TextBlock Margin="0,18,0,5"
+                                           FontSize="12"
+                                           Text="Intervalo de sondeo de entrada virtual" />
+                                <ComboBox Width="260"
+                                          HorizontalAlignment="Left"
+                                          ItemsSource="{Binding Settings.VirtualInputPollIntervalOptions}"
+                                          DisplayMemberPath="Label"
+                                          SelectedValuePath="Value"
+                                          SelectedValue="{Binding Settings.VirtualInputPollIntervalMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="0,6,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="Cuanto menor sea el intervalo, menor latencia pero mayor consumo de CPU. 8 ms es el valor por defecto; 16-33 ms reduce notablemente el uso sin perdida perceptible en la mayoria de casos."
+                                           TextWrapping="Wrap" />
+                                <Button Margin="0,18,0,0"
+                                        HorizontalAlignment="Left"
+                                        MinWidth="240"
+                                        Padding="14,8"
+                                        Command="{Binding Updates.ForceInstallLatestCommand}"
+                                        Content="Forzar instalación de la última versión" />
+                                <TextBlock Margin="0,8,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="Descarga e instala el último release publicado en GitHub aunque sea la misma versión o no supere los criterios del canal. Solo para pruebas; GDM se cerrará y se reiniciará."
                                            TextWrapping="Wrap" />
                             </StackPanel>
                         </Grid>

@@ -21,6 +21,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
     private readonly IAppLogService? _appLogService;
     private readonly AsyncCommand _checkCommand;
     private readonly AsyncCommand _installCommand;
+    private readonly AsyncCommand _forceInstallLatestCommand;
     private AppReleaseInfo? _availableUpdate;
     private bool _isBusy;
     private bool _isDownloading;
@@ -37,6 +38,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
 
     public ICommand CheckCommand => _checkCommand;
     public ICommand InstallCommand => _installCommand;
+    public ICommand ForceInstallLatestCommand => _forceInstallLatestCommand;
 
     public bool IsBusy
     {
@@ -49,6 +51,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(CanInstall));
                 _checkCommand.NotifyCanExecuteChanged();
                 _installCommand.NotifyCanExecuteChanged();
+                _forceInstallLatestCommand.NotifyCanExecuteChanged();
             }
         }
     }
@@ -67,6 +70,8 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
         get => _downloadProgress;
         private set => SetProperty(ref _downloadProgress, value);
     }
+
+    public AppReleaseInfo? AvailableUpdate => _availableUpdate;
 
     public bool HasUpdateAvailable => _availableUpdate is not null;
 
@@ -103,6 +108,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
         _appLogService = appLogService;
         _checkCommand = new AsyncCommand(CheckAsync, () => CanCheck);
         _installCommand = new AsyncCommand(InstallAsync, () => CanInstall);
+        _forceInstallLatestCommand = new AsyncCommand(ForceInstallLatestAsync, () => CanCheck);
     }
 
     public Task CheckAsync() => CheckAsync(silent: false);
@@ -181,9 +187,55 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task InstallAsync()
+    private Task InstallAsync() => InstallReleaseAsync(_availableUpdate);
+
+    public async Task ForceInstallLatestAsync()
     {
-        AppReleaseInfo? release = _availableUpdate;
+        if (IsBusy)
+        {
+            return;
+        }
+
+        IsBusy = true;
+        try
+        {
+            AppReleaseInfo? release = await _updateService.GetLatestReleaseAsync(UpdateChannels.Nightly);
+            if (release is null)
+            {
+                StatusTitle = "Sin versiones publicadas";
+                StatusMessage = "No se encontró ningún release en GitHub.";
+                return;
+            }
+
+            _availableUpdate = release;
+            OnPropertyChanged(nameof(UpdateStatusLabel));
+            OnPropertyChanged(nameof(HasUpdateAvailable));
+            await InstallReleaseAsync(release);
+        }
+        catch (Exception exception) when (
+            exception is HttpRequestException or
+            TaskCanceledException or
+            JsonException or
+            InvalidOperationException or
+            IOException)
+        {
+            StatusTitle = "No se pudo buscar la última versión";
+            StatusMessage = $"No se pudo conectar con GitHub: {exception.Message}";
+            _appLogService?.Write(
+                DiagnosticLogLevel.Warning,
+                "Actualizaciones",
+                "No se pudo consultar la última versión en GitHub.",
+                exception);
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    public Task InstallAvailableUpdateAsync() => InstallReleaseAsync(_availableUpdate, skipConfirmation: true);
+    private async Task InstallReleaseAsync(AppReleaseInfo? release, bool skipConfirmation = false)
+    {
         if (release?.Package is not { } package)
         {
             StatusTitle = "No hay paquete para instalar";
@@ -191,7 +243,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (!AppDialog.Confirm(
+        if (!skipConfirmation && !AppDialog.Confirm(
                 "Actualizar GDM",
                 $"Se descargará GDM {release.Version} desde {RepositoryDisplay} y se instalará sobre esta copia.\n\n" +
                 "La aplicación se cerrará al terminar la descarga y se reiniciará actualizada. ¿Continuar?",

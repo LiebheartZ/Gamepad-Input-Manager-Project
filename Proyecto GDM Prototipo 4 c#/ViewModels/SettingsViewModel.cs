@@ -29,6 +29,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private string _closeButtonBehavior;
     private bool _showExitConfirmation = true;
     private bool _checkForUpdatesOnStartup = true;
+    private bool _skipUpdateNotifications;
+    private int _virtualInputPollIntervalMs;
     private string _updateChannel = UpdateChannels.Standard;
     private int _selectedCategoryIndex;
     private bool _isBusy;
@@ -146,6 +148,26 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         set => SetProperty(ref _checkForUpdatesOnStartup, value);
     }
 
+    public bool SkipUpdateNotifications
+    {
+        get => _skipUpdateNotifications;
+        set => SetProperty(ref _skipUpdateNotifications, value);
+    }
+
+    public IReadOnlyList<PollIntervalOption> VirtualInputPollIntervalOptions { get; } =
+    [
+        new(8, "8 ms - maxima respuesta"),
+        new(16, "16 ms - equilibrado"),
+        new(33, "33 ms - bajo consumo"),
+        new(50, "50 ms - minimo consumo")
+    ];
+
+    public int VirtualInputPollIntervalMs
+    {
+        get => _virtualInputPollIntervalMs;
+        set => SetProperty(ref _virtualInputPollIntervalMs, Math.Clamp(value, 4, 100));
+    }
+
     public string UpdateChannel
     {
         get => _updateChannel;
@@ -236,7 +258,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         _closeButtonBehavior = CloseButtonBehaviors.Normalize(settings.CloseButtonBehavior);
         _showExitConfirmation = settings.ShowExitConfirmation;
         _checkForUpdatesOnStartup = settings.CheckForUpdatesOnStartup;
+        _skipUpdateNotifications = settings.SkipUpdateNotifications;
         _updateChannel = UpdateChannels.Normalize(settings.UpdateChannel);
+        _virtualInputPollIntervalMs = Math.Clamp(settings.VirtualInputPollIntervalMs, 4, 100);
 
         _saveCommand = new AsyncCommand(SaveAsync, () => !IsBusy);
         _restoreDefaultsCommand = new AsyncCommand(RestoreDefaultsAsync, () => !IsBusy);
@@ -276,6 +300,22 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         _applySettings(settings);
     }
 
+    public async Task SetSkipUpdateNotificationsAsync(bool skipUpdateNotifications)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        var settings = _currentSettings with
+        {
+            SkipUpdateNotifications = skipUpdateNotifications
+        };
+        await _settingsRepository.SaveAsync(settings);
+        _currentSettings = settings;
+        SkipUpdateNotifications = settings.SkipUpdateNotifications;
+        _applySettings(settings);
+    }
     public Task SaveAsync() => PersistAsync(
         _currentSettings with
         {
@@ -293,7 +333,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             CloseButtonBehavior = CloseButtonBehaviors.Normalize(CloseButtonBehavior),
             ShowExitConfirmation = ShowExitConfirmation,
             CheckForUpdatesOnStartup = CheckForUpdatesOnStartup,
-            UpdateChannel = UpdateChannels.Normalize(UpdateChannel)
+            SkipUpdateNotifications = SkipUpdateNotifications,
+            UpdateChannel = UpdateChannels.Normalize(UpdateChannel),
+            VirtualInputPollIntervalMs = Math.Clamp(VirtualInputPollIntervalMs, 4, 100)
         },
         "Se guardaron los ajustes.",
         "Ajustes guardados");
@@ -352,7 +394,9 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             CloseButtonBehavior = settings.CloseButtonBehavior;
             ShowExitConfirmation = settings.ShowExitConfirmation;
             CheckForUpdatesOnStartup = settings.CheckForUpdatesOnStartup;
+            SkipUpdateNotifications = settings.SkipUpdateNotifications;
             UpdateChannel = settings.UpdateChannel;
+            VirtualInputPollIntervalMs = settings.VirtualInputPollIntervalMs;
             _applySettings(settings);
             StatusTitle = successTitle;
             StatusMessage = successMessage;
@@ -448,6 +492,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
     public sealed record ThemeOption(string Value, string Label);
+
+    public sealed record PollIntervalOption(int Value, string Label);
 
     private sealed class AsyncCommand(Func<Task> execute, Func<bool> canExecute) : ICommand
     {

@@ -8,6 +8,7 @@ public sealed record AppSettings
     public string Theme { get; init; } = "System";
     public string Language { get; init; } = "es";
     public bool CheckForUpdatesOnStartup { get; init; } = true;
+    public bool SkipUpdateNotifications { get; init; }
     public string UpdateChannel { get; init; } = UpdateChannels.Standard;
     public bool StartWithWindows { get; init; }
     public bool StartMinimized { get; init; }
@@ -17,6 +18,7 @@ public sealed record AppSettings
     public Guid? DefaultProfileId { get; init; }
     public bool RestoreGamepadsOnExit { get; init; } = true;
     public bool ShowVirtualGamepadsInAllTabs { get; init; }
+    public int VirtualInputPollIntervalMs { get; init; } = 8;
     public string CloseButtonBehavior { get; init; } = CloseButtonBehaviors.HideToTray;
     public bool ShowExitConfirmation { get; init; } = true;
     public double WindowWidth { get; init; } = 800;

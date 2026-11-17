@@ -541,26 +541,70 @@ public sealed class HidHideService : IHidHideService
             throw new InvalidOperationException("No se pudo determinar la ruta del ejecutable de GDM.");
         }
 
+        string whitelistedPath = ToNtDevicePath(executablePath);
         string[] applications = ReadMultiSz(device, IoctlGetWhitelist);
-        if (!applications.Any(path => string.Equals(
+        List<string> updatedApplications = applications
+            .Where(path => !IsLegacyDosGdmPath(path))
+            .ToList();
+        if (!updatedApplications.Any(path => string.Equals(
                 path,
-                executablePath,
+                whitelistedPath,
                 StringComparison.OrdinalIgnoreCase)))
         {
-            SendMultiSz(device, IoctlSetWhitelist, [.. applications, executablePath]);
+            updatedApplications.Add(whitelistedPath);
+        }
+
+        if (updatedApplications.Count != applications.Length ||
+            !applications.SequenceEqual(updatedApplications, StringComparer.OrdinalIgnoreCase))
+        {
+            SendMultiSz(device, IoctlSetWhitelist, updatedApplications);
         }
 
         string[] verifiedApplications = ReadMultiSz(device, IoctlGetWhitelist);
         if (!verifiedApplications.Any(path => string.Equals(
                 path,
-                executablePath,
+                whitelistedPath,
                 StringComparison.OrdinalIgnoreCase)))
         {
             throw new InvalidOperationException(
                 "HidHide no confirmó que la ruta del ejecutable actual de GDM esté en su lista de aplicaciones permitidas.");
         }
 
-        return executablePath;
+        return whitelistedPath;
+    }
+
+    private static bool IsLegacyDosGdmPath(string path) =>
+        path.Length > 3 &&
+        char.IsLetter(path[0]) &&
+        path[1] == ':' &&
+        path[2] == '\\' &&
+        path.EndsWith("\\GDM.exe", StringComparison.OrdinalIgnoreCase);
+
+    private static string ToNtDevicePath(string dosPath)
+    {
+        if (dosPath.StartsWith("\\Device\\", StringComparison.OrdinalIgnoreCase) ||
+            dosPath.Length < 3 ||
+            !char.IsLetter(dosPath[0]) ||
+            dosPath[1] != ':')
+        {
+            return dosPath;
+        }
+
+        var target = new StringBuilder(260);
+        if (NativeMethods.QueryDosDevice(dosPath.Substring(0, 2), target, target.Capacity) == 0)
+        {
+            return dosPath;
+        }
+
+        string? deviceRoot = target.ToString()
+            .Split('\0', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(part => part.StartsWith("\\Device\\", StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrEmpty(deviceRoot))
+        {
+            return dosPath;
+        }
+
+        return deviceRoot + dosPath.Substring(2);
     }
 
     private void WriteDiagnostic(
@@ -863,6 +907,11 @@ public sealed class HidHideService : IHidHideService
             int deviceInstanceIdSize,
             out int requiredSize);
 
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        internal static extern uint QueryDosDevice(
+            string deviceName,
+            StringBuilder targetPath,
+            int maxTargetPath);
         [DllImport("setupapi.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool SetupDiDestroyDeviceInfoList(IntPtr deviceInfoSet);

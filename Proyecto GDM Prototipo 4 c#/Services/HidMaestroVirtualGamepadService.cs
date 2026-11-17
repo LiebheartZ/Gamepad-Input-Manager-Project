@@ -166,12 +166,13 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
 
             try
             {
-                session.Controller.SubmitState(
-                    HidMaestroGamepadMapper.CreateState(
-                        initialSnapshot,
-                        session.OutputProfile,
-                        mappingProfile,
-                        session.VirtualGamepadType));
+                HMGamepadState initialState = HidMaestroGamepadMapper.CreateState(
+                    initialSnapshot,
+                    session.OutputProfile,
+                    mappingProfile,
+                    session.VirtualGamepadType);
+                session.Controller.SubmitState(initialState);
+                session.LastSubmittedState = initialState;
             }
             catch
             {
@@ -272,14 +273,41 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
         ControllerProfile? mappingProfile,
         IReadOnlyCollection<string>? additionalTargetButtons = null)
     {
-        session.Controller.SubmitState(
-            HidMaestroGamepadMapper.CreateState(
-                snapshot,
-                session.OutputProfile,
-                mappingProfile,
-                session.VirtualGamepadType,
-                additionalTargetButtons));
+        HMGamepadState state = HidMaestroGamepadMapper.CreateState(
+            snapshot,
+            session.OutputProfile,
+            mappingProfile,
+            session.VirtualGamepadType,
+            additionalTargetButtons);
+        if (session.LastSubmittedState is { } lastState && StatesEqual(lastState, state))
+        {
+            session.MappingProfile = mappingProfile;
+            return;
+        }
+
+        session.Controller.SubmitState(state);
+        session.LastSubmittedState = state;
         session.MappingProfile = mappingProfile;
+    }
+
+    private static bool StatesEqual(HMGamepadState first, HMGamepadState second)
+    {
+        if (first.Buttons != second.Buttons || first.Hat != second.Hat ||
+            first.Axes is null || second.Axes is null ||
+            first.Axes.Count != second.Axes.Count)
+        {
+            return false;
+        }
+
+        foreach ((HMAxis axis, float value) in first.Axes)
+        {
+            if (!second.Axes.TryGetValue(axis, out float other) || other != value)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool IsAdministratorProcess()
@@ -302,5 +330,6 @@ public sealed class HidMaestroVirtualGamepadService : IVirtualGamepadService
         public ConnectedGamepad Device { get; set; } = device;
         public ControllerProfile? MappingProfile { get; set; } = mappingProfile;
         public string VirtualGamepadType { get; } = virtualGamepadType;
+        public HMGamepadState? LastSubmittedState { get; set; }
     }
 }
