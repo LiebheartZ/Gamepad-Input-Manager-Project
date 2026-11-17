@@ -1723,6 +1723,7 @@
                                                             MinWidth="140"
                                                             Padding="12,6"
                                                             Command="{Binding PowerOffCommand}"
+                                                            CommandParameter="{Binding}"
                                                             Content="Apagar mando ahora" />
                                                 </StackPanel>
                                             </Border>
