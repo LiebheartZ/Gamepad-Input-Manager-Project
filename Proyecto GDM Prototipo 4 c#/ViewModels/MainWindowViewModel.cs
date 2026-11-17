@@ -32,6 +32,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly Func<Guid?>? _defaultProfileId;
     private readonly System.Threading.Timer? _pollTimer;
     private readonly DispatcherTimer _testerInputTimer;
+    private readonly DispatcherTimer _idlePowerOffTimer;
     private readonly Dictionary<Guid, string> _sessionSavedDeviceKeys = [];
     private Task? _controllerInitializationTask;
     private CancellationTokenSource? _refreshCancellation;
@@ -229,7 +230,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 exception),
             defaultVirtualGamepadType,
             restoreGamepadsOnExit,
-            new SonyControllerLedService());
+            new SonyControllerLedService(),
+            new ControllerPowerOffService());
         Profiles.PropertyChanged += OnProfilesPropertyChanged;
         NavigateCommand = new NavigationCommand(Navigate);
         _refreshDevicesCommand = new AsyncCommand(
@@ -271,6 +273,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         };
         _testerInputTimer.Tick += OnTesterInputTimerTick;
         _testerViewModel.PropertyChanged += OnTesterPropertyChanged;
+
+        _idlePowerOffTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _idlePowerOffTimer.Tick += OnIdlePowerOffTimerTick;
 
         ConnectedGamepads.CollectionChanged += (_, _) =>
         {
@@ -623,14 +631,37 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         _isMonitoring = true;
+        _idlePowerOffTimer.Start();
         UpdateDevicePollingInterval();
     }
 
     public void StopMonitoring()
     {
         _pollTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        _idlePowerOffTimer.Stop();
         _isMonitoring = false;
         _refreshCancellation?.Cancel();
+    }
+
+    private async void OnIdlePowerOffTimerTick(object? sender, EventArgs e)
+    {
+        if (!_isMonitoring)
+        {
+            return;
+        }
+
+        try
+        {
+            await Profiles.PollControllerIdlePowerOffAsync();
+        }
+        catch (Exception exception)
+        {
+            _appLogService?.Write(
+                DiagnosticLogLevel.Warning,
+                "Apagado por inactividad",
+                "Error en el sondeo de apagado por inactividad.",
+                exception);
+        }
     }
 
     private void UpdateDevicePollingInterval()
@@ -1487,6 +1518,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         StopMonitoring();
         _testerInputTimer.Stop();
         _testerInputTimer.Tick -= OnTesterInputTimerTick;
+        _idlePowerOffTimer.Stop();
+        _idlePowerOffTimer.Tick -= OnIdlePowerOffTimerTick;
         _testerViewModel.PropertyChanged -= OnTesterPropertyChanged;
         Tester.Dispose();
         _pollTimer?.Dispose();

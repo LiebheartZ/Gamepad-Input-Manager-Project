@@ -9,6 +9,8 @@ namespace GDM.ViewModels;
 
 public sealed record LedModeOption(string Value, string Label);
 
+public sealed record PowerOffIdleOption(int Seconds, string Label);
+
 public sealed class LedColorSlot : INotifyPropertyChanged
 {
     private readonly Func<LedColorSlot, Task> _pickColor;
@@ -71,12 +73,15 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
     private readonly Func<VirtualGamepadControllerViewModel, Task> _toggleAutoStart;
     private readonly Func<VirtualGamepadControllerViewModel, Task> _toggleAutoHide;
     private readonly Func<VirtualGamepadControllerViewModel, Task> _toggleKeepHiddenOnExit;
+    private readonly Func<VirtualGamepadControllerViewModel, Task> _powerOff;
+    private readonly Func<VirtualGamepadControllerViewModel, int, Task> _savePowerOffSettings;
     private readonly Func<VirtualGamepadControllerViewModel, ControllerLedSettings, Task> _saveLedSettings;
     private readonly AsyncCommand _startCommand;
     private readonly AsyncCommand _stopCommand;
     private readonly AsyncCommand _toggleAutoStartCommand;
     private readonly AsyncCommand _toggleAutoHideCommand;
     private readonly AsyncCommand _toggleKeepHiddenOnExitCommand;
+    private readonly AsyncCommand _powerOffCommand;
     private readonly AsyncCommand _pickLedManualColorCommand;
     private readonly List<LedColorSlot> _ledPlayerColorSlots = [];
     private ControllerRecord _record;
@@ -110,6 +115,7 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
     public ICommand ToggleAutoStartCommand => _toggleAutoStartCommand;
     public ICommand ToggleAutoHideCommand => _toggleAutoHideCommand;
     public ICommand ToggleKeepHiddenOnExitCommand => _toggleKeepHiddenOnExitCommand;
+    public ICommand PowerOffCommand => _powerOffCommand;
 
     public IReadOnlyList<LedModeOption> LedModeOptions { get; } =
     [
@@ -121,6 +127,16 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
 
     public IReadOnlyList<int> LedPlayerNumberOptions { get; } =
         [ControllerLedSettings.MinPlayerNumber, 2, 3, ControllerLedSettings.MaxPlayerNumber];
+    public IReadOnlyList<PowerOffIdleOption> PowerOffIdleOptions { get; } =
+    [
+        new(0, "Desactivado"),
+        new(60, "1 minuto"),
+        new(300, "5 minutos"),
+        new(900, "15 minutos"),
+        new(1800, "30 minutos"),
+        new(3600, "1 hora"),
+        new(7200, "2 horas")
+    ];
     public IReadOnlyList<LedColorSlot> LedPlayerColorSlots => _ledPlayerColorSlots;
     public ICommand PickLedManualColorCommand => _pickLedManualColorCommand;
 
@@ -149,6 +165,8 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
     public bool HasLedSupport { get; private set; }
     public string LedSupportText { get; private set; } =
         "Conecta el mando físico para consultar el soporte de LED.";
+    public string PowerOffSupportText { get; private set; } =
+        "Conecta el mando físico para consultar si se puede apagar.";
 
     public VirtualGamepadControllerViewModel(
         ControllerRecord record,
@@ -157,6 +175,8 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
         Func<VirtualGamepadControllerViewModel, Task> toggleAutoStart,
         Func<VirtualGamepadControllerViewModel, Task> toggleAutoHide,
         Func<VirtualGamepadControllerViewModel, Task> toggleKeepHiddenOnExit,
+        Func<VirtualGamepadControllerViewModel, Task> powerOff,
+        Func<VirtualGamepadControllerViewModel, int, Task> savePowerOffSettings,
         Func<VirtualGamepadControllerViewModel, ControllerLedSettings, Task> saveLedSettings)
     {
         _record = record;
@@ -165,6 +185,8 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
         _toggleAutoStart = toggleAutoStart;
         _toggleAutoHide = toggleAutoHide;
         _toggleKeepHiddenOnExit = toggleKeepHiddenOnExit;
+        _powerOff = powerOff;
+        _savePowerOffSettings = savePowerOffSettings;
         _saveLedSettings = saveLedSettings;
         _startCommand = new AsyncCommand(_start, () => CanStart);
         _stopCommand = new AsyncCommand(_stop, () => CanStop);
@@ -177,6 +199,7 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
         _toggleKeepHiddenOnExitCommand = new AsyncCommand(
             _toggleKeepHiddenOnExit,
             () => !_isStarting);
+        _powerOffCommand = new AsyncCommand(_powerOff, () => !_isStarting);
         _pickLedManualColorCommand = new AsyncCommand(
             _ => PickManualColorAsync(),
             () => true);
@@ -222,6 +245,7 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(AutoStartOnConnect));
         OnPropertyChanged(nameof(AutoHideOnConnect));
         OnPropertyChanged(nameof(KeepHiddenOnExit));
+        OnPropertyChanged(nameof(PowerOffIdleSeconds));
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(CanStart));
         OnPropertyChanged(nameof(CanStop));
@@ -230,6 +254,7 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
         _toggleAutoStartCommand.NotifyCanExecuteChanged();
         _toggleAutoHideCommand.NotifyCanExecuteChanged();
         _toggleKeepHiddenOnExitCommand.NotifyCanExecuteChanged();
+        _powerOffCommand.NotifyCanExecuteChanged();
         RefreshLedProperties();
     }
 
@@ -244,6 +269,7 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
         _toggleAutoStartCommand.NotifyCanExecuteChanged();
         _toggleAutoHideCommand.NotifyCanExecuteChanged();
         _toggleKeepHiddenOnExitCommand.NotifyCanExecuteChanged();
+        _powerOffCommand.NotifyCanExecuteChanged();
     }
 
     public void SetStatus(string status)
@@ -260,8 +286,39 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(AutoStartOnConnect));
         OnPropertyChanged(nameof(AutoHideOnConnect));
         OnPropertyChanged(nameof(KeepHiddenOnExit));
+        OnPropertyChanged(nameof(PowerOffIdleSeconds));
         RefreshLedProperties();
     }
+
+    public int PowerOffIdleSeconds
+    {
+        get => ControllerPowerOff.Normalize(_record.Settings.PowerOffIdleSeconds);
+        set
+        {
+            int normalized = ControllerPowerOff.Normalize(value);
+            if (normalized == ControllerPowerOff.Normalize(_record.Settings.PowerOffIdleSeconds))
+            {
+                return;
+            }
+
+            _ = _savePowerOffSettings(this, normalized);
+        }
+    }
+
+    public void SetPowerOffSupport(string text)
+    {
+        if (_powerOffSupportTextBacking == text)
+        {
+            return;
+        }
+
+        _powerOffSupportTextBacking = text;
+        PowerOffSupportText = text;
+        OnPropertyChanged(nameof(PowerOffSupportText));
+    }
+
+    private string _powerOffSupportTextBacking =
+        "Conecta el mando físico para consultar si se puede apagar.";
 
     public void SetLedMode(string value)
     {

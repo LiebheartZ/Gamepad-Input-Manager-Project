@@ -1690,6 +1690,42 @@
                                                     </StackPanel>
                                                 </StackPanel>
                                             </Border>
+                                            <Border Margin="0,14,0,0"
+                                                    Padding="18"
+                                                    Background="{DynamicResource PanelBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <StackPanel>
+                                                    <TextBlock FontSize="16"
+                                                               FontWeight="SemiBold"
+                                                               Text="Apagado del mando" />
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="{Binding PowerOffSupportText}"
+                                                               TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,12,0,4"
+                                                               FontSize="12"
+                                                               Text="Apagar tras inactividad" />
+                                                    <ComboBox Width="200"
+                                                              HorizontalAlignment="Left"
+                                                              ItemsSource="{Binding PowerOffIdleOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Seconds"
+                                                              SelectedValue="{Binding PowerOffIdleSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="El temporizador se reinicia con cualquier cambio en los controles del mando."
+                                                               TextWrapping="Wrap" />
+                                                    <Button Margin="0,12,0,0"
+                                                            HorizontalAlignment="Left"
+                                                            MinWidth="140"
+                                                            Padding="12,6"
+                                                            Command="{Binding PowerOffCommand}"
+                                                            Content="Apagar mando ahora" />
+                                                </StackPanel>
+                                            </Border>
                                         </StackPanel>
                                     </TabItem>
                                 </TabControl>

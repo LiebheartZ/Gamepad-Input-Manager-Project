@@ -33,6 +33,16 @@ public sealed record ControllerSettings
     public bool AutoHidePhysicalGamepad { get; init; }
     public bool KeepHiddenOnExit { get; init; }
     public ControllerLedSettings Led { get; init; } = ControllerLedSettings.Default;
+    public int PowerOffIdleSeconds { get; init; }
+}
+
+public static class ControllerPowerOff
+{
+    public const int MinIdleSeconds = 60;
+    public const int MaxIdleSeconds = 7200;
+
+    public static int Normalize(int seconds) =>
+        seconds <= 0 ? 0 : Math.Clamp(seconds, MinIdleSeconds, MaxIdleSeconds);
 }
 
 public sealed record ControllerIdentityEvidence

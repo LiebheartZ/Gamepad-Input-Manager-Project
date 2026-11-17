@@ -27,7 +27,10 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     private readonly Func<string>? _defaultVirtualGamepadType;
     private readonly Func<bool>? _restoreGamepadsOnExit;
     private readonly ISonyControllerLedService? _ledService;
+    private readonly IControllerPowerOffService? _powerOffService;
     private readonly Dictionary<string, SonyLedApplyResult> _lastLedResults = new(StringComparer.Ordinal);
+    private readonly Dictionary<Guid, string> _powerOffSupportCheckedKeys = new();
+    private readonly Dictionary<Guid, IdlePowerOffState> _idlePowerOffStates = new();
     private readonly AsyncCommand _createCommand;
     private readonly AsyncCommand _saveCommand;
     private readonly AsyncCommand _duplicateCommand;
@@ -264,7 +267,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         Action<DiagnosticLogLevel, string, Exception?>? writeDiagnostic = null,
         Func<string>? defaultVirtualGamepadType = null,
         Func<bool>? restoreGamepadsOnExit = null,
-        ISonyControllerLedService? ledService = null)
+        ISonyControllerLedService? ledService = null,
+        IControllerPowerOffService? powerOffService = null)
     {
         _profileRepository = profileRepository;
         _controllerRepository = controllerRepository;
@@ -281,6 +285,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         _defaultVirtualGamepadType = defaultVirtualGamepadType;
         _restoreGamepadsOnExit = restoreGamepadsOnExit;
         _ledService = ledService;
+        _powerOffService = powerOffService;
         _createCommand = new AsyncCommand(CreateAsync, () => CanEditProfiles);
         _saveCommand = new AsyncCommand(SaveAsync, () =>
             CanEditProfiles && SelectedProfile is not null &&
@@ -1374,6 +1379,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                     ToggleAutoStartVirtualGamepadAsync,
                     ToggleAutoHidePhysicalGamepadAsync,
                     ToggleKeepHiddenOnExitAsync,
+                    PowerOffControllerAsync,
+                    SavePowerOffSettingsAsync,
                     SaveLedSettingsAsync);
                 VirtualGamepads.Add(output);
                 output.PropertyChanged += OnVirtualGamepadItemPropertyChanged;
@@ -1436,6 +1443,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 running,
                 ResolveVirtualGamepadType(record));
             _ = ApplyLedStateAsync(output);
+            RefreshPowerOffSupportIfNeeded(output, connectedDevice);
             if (_isInitialized &&
                 _controllersLoaded &&
                 record.Settings.AutoStartVirtualGamepad &&
@@ -1755,6 +1763,12 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 await SwitchVirtualGamepadTypeAsync(item, device, snapshot, profile, combo);
                 return;
             }
+
+            if (combo.ActionType == ComboActionTypes.PowerOff)
+            {
+                await PowerOffControllerCoreAsync(item, device, $"combo «{combo.DisplayName}»");
+                return;
+            }
         }
     }
 
@@ -1999,6 +2013,279 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         finally
         {
             item.SetStarting(false);
+        }
+    }
+
+    private void RefreshPowerOffSupportIfNeeded(
+        VirtualGamepadControllerViewModel item,
+        ConnectedGamepad? device)
+    {
+        if (_powerOffService is null)
+        {
+            return;
+        }
+
+        string key = device?.DeviceKey ?? "(desconectado)";
+        if (_powerOffSupportCheckedKeys.GetValueOrDefault(item.Record.ControllerId) == key)
+        {
+            return;
+        }
+
+        _powerOffSupportCheckedKeys[item.Record.ControllerId] = key;
+        if (device is null)
+        {
+            item.SetPowerOffSupport("Conecta el mando físico para consultar si se puede apagar.");
+            return;
+        }
+
+        if (device.IsVirtualGamepad || string.IsNullOrWhiteSpace(device.DevicePath))
+        {
+            item.SetPowerOffSupport("Los mandos virtuales no se pueden apagar desde GDM.");
+            return;
+        }
+
+        _ = RefreshPowerOffSupportAsync(item, device);
+    }
+
+    private async Task RefreshPowerOffSupportAsync(
+        VirtualGamepadControllerViewModel item,
+        ConnectedGamepad device)
+    {
+        try
+        {
+            bool supported = await _powerOffService!.SupportsPowerOffAsync(device);
+            if (item.ConnectedDevice?.DeviceKey != device.DeviceKey)
+            {
+                return;
+            }
+
+            item.SetPowerOffSupport(supported
+                ? "Apagado disponible: el mando está conectado por Bluetooth. Al apagarlo se suspenderá sin desemparejarlo de Windows; pulsa su botón de encendido para reconectarlo."
+                : "Este mando no se puede apagar por software: el apagado solo está disponible para mandos conectados por Bluetooth.");
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            item.SetPowerOffSupport("No se pudo consultar el soporte de apagado del mando.");
+        }
+    }
+
+    public Task PowerOffControllerAsync(VirtualGamepadControllerViewModel item)
+    {
+        if (item.ConnectedDevice is not { } device)
+        {
+            item.SetStatus("Conecta el mando físico para poder apagarlo.");
+            return Task.CompletedTask;
+        }
+
+        return PowerOffControllerCoreAsync(item, device, "manual");
+    }
+
+    private async Task PowerOffControllerCoreAsync(
+        VirtualGamepadControllerViewModel item,
+        ConnectedGamepad device,
+        string reason)
+    {
+        IControllerPowerOffService? service = _powerOffService;
+        if (service is null)
+        {
+            item.SetStatus("El apagado de mandos no está disponible en esta sesión.");
+            return;
+        }
+
+        if (_virtualGamepadService?.IsRunningFor(device.DeviceKey) == true)
+        {
+            await StopVirtualGamepadAsync(item);
+        }
+
+        item.SetStatus($"Apagando el mando físico ({reason})…");
+        try
+        {
+            ControllerPowerOffResult result = await service.TryPowerOffAsync(device);
+            switch (result.Status)
+            {
+                case ControllerPowerOffStatus.PoweredOff:
+                    item.SetStatus(
+                        $"Mando apagado ({reason}). Pulsa su botón de encendido para reconectarlo; no se ha desemparejado de Windows.");
+                    WriteAutoHideDiagnostic(
+                        DiagnosticLogLevel.Information,
+                        $"Mando físico apagado por {reason}. Controlador={item.Record.ControllerId}; " +
+                        $"mando={DescribeDevice(device)}.");
+                    break;
+                case ControllerPowerOffStatus.NotConnected:
+                    item.SetStatus(
+                        $"No se pudo apagar el mando ({reason}): {result.Detail}. Si está conectado por USB no admite apagado por software.");
+                    WriteAutoHideDiagnostic(
+                        DiagnosticLogLevel.Warning,
+                        $"Apagado de mando sin enlace Bluetooth activo. Controlador={item.Record.ControllerId}; " +
+                        $"mando={DescribeDevice(device)}; motivo={reason}.");
+                    break;
+                case ControllerPowerOffStatus.UnsupportedDevice:
+                    item.SetStatus(
+                        $"No se puede apagar este mando: {result.Detail ?? "solo los mandos Bluetooth admiten apagado"}.");
+                    break;
+                default:
+                    item.SetStatus($"No se pudo apagar el mando ({reason}): {result.Detail ?? "error desconocido"}.");
+                    WriteAutoHideDiagnostic(
+                        DiagnosticLogLevel.Warning,
+                        $"Falló el apagado del mando físico. Controlador={item.Record.ControllerId}; " +
+                        $"mando={DescribeDevice(device)}; motivo={reason}; detalle={result.Detail}.");
+                    break;
+            }
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+            InvalidOperationException or
+            System.ComponentModel.Win32Exception or
+            UnauthorizedAccessException)
+        {
+            item.SetStatus($"No se pudo apagar el mando ({reason}): {exception.Message}");
+            _reportError?.Invoke(item.StatusMessage, exception);
+        }
+    }
+
+    public async Task PollControllerIdlePowerOffAsync()
+    {
+        if (_inputService is null || _powerOffService is null)
+        {
+            return;
+        }
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        foreach (VirtualGamepadControllerViewModel item in VirtualGamepads.ToArray())
+        {
+            int timeoutSeconds = ControllerPowerOff.Normalize(item.Record.Settings.PowerOffIdleSeconds);
+            ConnectedGamepad? device = item.ConnectedDevice;
+            if (timeoutSeconds <= 0 || device is null || device.IsVirtualGamepad)
+            {
+                _idlePowerOffStates.Remove(item.Record.ControllerId);
+                continue;
+            }
+
+            if (!_idlePowerOffStates.TryGetValue(item.Record.ControllerId, out IdlePowerOffState? state) ||
+                state.DeviceKey != device.DeviceKey)
+            {
+                _idlePowerOffStates[item.Record.ControllerId] = new IdlePowerOffState(
+                    device.DeviceKey,
+                    lastSnapshot: null,
+                    now,
+                    powerOffTriggered: false);
+                continue;
+            }
+
+            GamepadInputSnapshot? snapshot = await _inputService.ReadInputAsync(device.DeviceKey);
+            if (snapshot is null)
+            {
+                _idlePowerOffStates.Remove(item.Record.ControllerId);
+                continue;
+            }
+
+            if (state.LastSnapshot is null || !SnapshotsEqual(state.LastSnapshot, snapshot))
+            {
+                state.LastSnapshot = snapshot;
+                state.LastActivityUtc = now;
+                state.PowerOffTriggered = false;
+                continue;
+            }
+
+            if (!state.PowerOffTriggered &&
+                now - state.LastActivityUtc >= TimeSpan.FromSeconds(timeoutSeconds))
+            {
+                state.PowerOffTriggered = true;
+                await PowerOffControllerCoreAsync(
+                    item,
+                    device,
+                    $"inactividad de {FormatIdleTimeout(timeoutSeconds)}");
+            }
+        }
+    }
+
+    private static bool SnapshotsEqual(GamepadInputSnapshot first, GamepadInputSnapshot second)
+    {
+        if (first.Buttons.Count != second.Buttons.Count ||
+            first.Axes.Count != second.Axes.Count)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < first.Buttons.Count; index++)
+        {
+            if (first.Buttons[index].IsPressed != second.Buttons[index].IsPressed)
+            {
+                return false;
+            }
+        }
+
+        for (int index = 0; index < first.Axes.Count; index++)
+        {
+            if (Math.Abs(first.Axes[index].Value - second.Axes[index].Value) > 0.001)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string FormatIdleTimeout(int seconds) =>
+        seconds % 3600 == 0
+            ? $"{seconds / 3600} h"
+            : seconds % 60 == 0
+                ? $"{seconds / 60} min"
+                : $"{seconds} s";
+
+    private sealed class IdlePowerOffState(
+        string deviceKey,
+        GamepadInputSnapshot? lastSnapshot,
+        DateTimeOffset lastActivityUtc,
+        bool powerOffTriggered)
+    {
+        public string DeviceKey { get; } = deviceKey;
+        public GamepadInputSnapshot? LastSnapshot { get; set; } = lastSnapshot;
+        public DateTimeOffset LastActivityUtc { get; set; } = lastActivityUtc;
+        public bool PowerOffTriggered { get; set; } = powerOffTriggered;
+    }
+
+    private async Task SavePowerOffSettingsAsync(
+        VirtualGamepadControllerViewModel item,
+        int idleSeconds)
+    {
+        if (_controllerRepository is null)
+        {
+            item.SetStatus("No se puede guardar el apagado por inactividad.");
+            return;
+        }
+
+        try
+        {
+            int normalized = ControllerPowerOff.Normalize(idleSeconds);
+            ControllerRecord updated = item.Record with
+            {
+                Settings = item.Record.Settings with
+                {
+                    PowerOffIdleSeconds = normalized
+                },
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            };
+            await _controllerRepository.SaveAsync(updated);
+            int index = SavedControllers.IndexOf(item.Record);
+            if (index >= 0)
+            {
+                SavedControllers[index] = updated;
+            }
+
+            item.UpdateRecord(updated);
+            _onControllerUpdated(updated);
+            _idlePowerOffStates.Remove(item.Record.ControllerId);
+            item.SetStatus(normalized > 0
+                ? $"El mando se apagará tras {FormatIdleTimeout(normalized)} sin actividad."
+                : "Apagado por inactividad desactivado.");
+        }
+        catch (Exception exception) when (
+            exception is InvalidDataException or IOException or UnauthorizedAccessException)
+        {
+            item.SetStatus($"No se pudo guardar el apagado por inactividad: {exception.Message}");
+            _reportError?.Invoke(item.StatusMessage, exception);
         }
     }
 
