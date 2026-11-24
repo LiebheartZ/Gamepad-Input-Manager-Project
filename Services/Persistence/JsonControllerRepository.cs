@@ -37,6 +37,16 @@ public sealed class JsonControllerRepository : IControllerRepository
                 ControllerRecord record = await _fileStore.ReadAsync<ControllerRecord>(
                     _paths.GetControllerFilePath(entry.ControllerId),
                     cancellationToken);
+                if (record.SchemaVersion == 1)
+                {
+                    record = record with
+                    {
+                        SchemaVersion = ControllerRecord.CurrentSchemaVersion,
+                        ProfileId = record.ProfileId ??
+                            (record.DeviceProfile is null ? ControllerProfile.GlobalPresetId : null),
+                        SettingOverrides = MigrateOverrides(record.Settings)
+                    };
+                }
                 Validate(record);
 
                 if (record.ControllerId != entry.ControllerId)
@@ -163,6 +173,85 @@ public sealed class JsonControllerRepository : IControllerRepository
         return index;
     }
 
+    private static DeviceSettingOverrides MigrateOverrides(ControllerSettings settings)
+    {
+        ControllerSettings defaults = new();
+        return new DeviceSettingOverrides
+        {
+            VibrationEnabled = settings.VibrationEnabled == defaults.VibrationEnabled
+                ? null
+                : settings.VibrationEnabled,
+            AutoStartVirtualGamepad = settings.AutoStartVirtualGamepad == defaults.AutoStartVirtualGamepad
+                ? null
+                : settings.AutoStartVirtualGamepad,
+            AutoHidePhysicalGamepad = settings.AutoHidePhysicalGamepad == defaults.AutoHidePhysicalGamepad
+                ? null
+                : settings.AutoHidePhysicalGamepad,
+            KeepHiddenOnExit = settings.KeepHiddenOnExit == defaults.KeepHiddenOnExit
+                ? null
+                : settings.KeepHiddenOnExit,
+            Led = LedSettingsEqual(settings.Led, defaults.Led) ? null : settings.Led,
+            PowerOffIdleSeconds = settings.PowerOffIdleSeconds == defaults.PowerOffIdleSeconds
+                ? null
+                : settings.PowerOffIdleSeconds,
+            InputPollIntervalMs = settings.InputPollIntervalMs == defaults.InputPollIntervalMs
+                ? null
+                : settings.InputPollIntervalMs,
+            MotionEnabled = settings.MotionEnabled == defaults.MotionEnabled
+                ? null
+                : settings.MotionEnabled,
+            MotionPollIntervalMs = settings.MotionPollIntervalMs == defaults.MotionPollIntervalMs
+                ? null
+                : settings.MotionPollIntervalMs,
+            BatteryAlertEnabled = settings.BatteryAlertEnabled == defaults.BatteryAlertEnabled
+                ? null
+                : settings.BatteryAlertEnabled,
+            BatteryAlertLevel = settings.BatteryAlertLevel == defaults.BatteryAlertLevel
+                ? null
+                : settings.BatteryAlertLevel,
+            BatteryAlertColorEnabled = settings.BatteryAlertColorEnabled == defaults.BatteryAlertColorEnabled
+                ? null
+                : settings.BatteryAlertColorEnabled,
+            BatteryAlertColor = settings.BatteryAlertColor == defaults.BatteryAlertColor
+                ? null
+                : settings.BatteryAlertColor,
+            BatteryAlertEffectEnabled = settings.BatteryAlertEffectEnabled == defaults.BatteryAlertEffectEnabled
+                ? null
+                : settings.BatteryAlertEffectEnabled,
+            BatteryAlertEffect = settings.BatteryAlertEffect == defaults.BatteryAlertEffect
+                ? null
+                : settings.BatteryAlertEffect,
+            ChargingLedEffect = settings.ChargingLedEffect == defaults.ChargingLedEffect
+                ? null
+                : ChargingLedEffects.Normalize(settings.ChargingLedEffect),
+            LedEffectColorIntensity = settings.LedEffectColorIntensity == defaults.LedEffectColorIntensity
+                ? null
+                : settings.LedEffectColorIntensity,
+            BatteryNotifyEnabled = settings.BatteryNotifyEnabled == defaults.BatteryNotifyEnabled
+                ? null
+                : settings.BatteryNotifyEnabled,
+            BatterySoundEnabled = settings.BatterySoundEnabled == defaults.BatterySoundEnabled
+                ? null
+                : settings.BatterySoundEnabled,
+            IgnoreExternalColorSignals = settings.IgnoreExternalColorSignals == defaults.IgnoreExternalColorSignals
+                ? null
+                : settings.IgnoreExternalColorSignals
+        };
+    }
+
+    private static bool LedSettingsEqual(ControllerLedSettings? left, ControllerLedSettings? right)
+    {
+        ControllerLedSettings a = ControllerLedSettings.Normalize(left);
+        ControllerLedSettings b = ControllerLedSettings.Normalize(right);
+        return a.Mode == b.Mode &&
+            a.ManualColor == b.ManualColor &&
+            a.Brightness == b.Brightness &&
+            a.PlayerNumber == b.PlayerNumber &&
+            a.PlayerColors.Count == b.PlayerColors.Count &&
+            a.PlayerColors.All(pair =>
+                b.PlayerColors.TryGetValue(pair.Key, out string? value) && value == pair.Value);
+    }
+
     private static string GetFileName(Guid controllerId) =>
         $"controller_{controllerId:N}.json";
 
@@ -189,7 +278,8 @@ public sealed class JsonControllerRepository : IControllerRepository
             record.ButtonMappingOverrides is null ||
             record.AxisMappingOverrides is null ||
             record.DeadZoneOverrides is null ||
-            record.Settings is null)
+            record.Settings is null ||
+            record.SettingOverrides is null)
         {
             throw new InvalidDataException("El archivo del mando contiene campos obligatorios nulos.");
         }

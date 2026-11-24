@@ -54,7 +54,8 @@ public sealed class JsonAppSettingsRepository : IAppSettingsRepository
                 "El tema de la aplicación debe ser System, Light o Dark.");
         }
 
-        if (!VirtualGamepadTypes.IsSupported(settings.DefaultVirtualGamepadType))
+        if (!VirtualGamepadTypes.IsSupported(settings.DefaultVirtualGamepadType) &&
+            !VirtualGamepadTypes.IsAuto(settings.DefaultVirtualGamepadType))
         {
             throw new InvalidDataException(
                 "El tipo de mando virtual predeterminado no es compatible.");

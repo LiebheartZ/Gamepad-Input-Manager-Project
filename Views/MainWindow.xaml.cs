@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Input;
+using System.Windows.Media;
 using GDM.Models;
 using GDM.Services.Abstractions;
 using GDM.ViewModels;
@@ -62,10 +63,17 @@ public partial class MainWindow : Window
         IHidHideService? hidHideService = null,
         bool startMinimized = false,
         Func<string>? defaultVirtualGamepadType = null,
-        Func<bool>? restoreGamepadsOnExit = null,
-        Func<Guid?>? defaultProfileId = null)
+        Func<Guid?>? defaultProfileId = null,
+        IGlobalPresetRepository? globalPresetRepository = null)
     {
         InitializeComponent();
+        if (startMinimized)
+        {
+            Opacity = 0;
+            ShowInTaskbar = false;
+            ShowActivated = false;
+        }
+
         Width = settings.WindowWidth;
         Height = settings.WindowHeight;
         var trayMenu = new System.Windows.Forms.ContextMenuStrip();
@@ -100,8 +108,8 @@ public partial class MainWindow : Window
             hidHideService: hidHideService,
             requestElevatedVirtualGamepad: LaunchElevatedVirtualGamepad,
             defaultVirtualGamepadType: defaultVirtualGamepadType,
-            restoreGamepadsOnExit: restoreGamepadsOnExit,
             defaultProfileId: defaultProfileId,
+            globalPresetRepository: globalPresetRepository,
             confirmDeleteProfile: profile => AppDialog.Confirm(
                 "Eliminar perfil",
                 $"Se eliminará el perfil «{profile.DisplayName}». Esta acción no se puede deshacer.\n\n¿Deseas continuar?",
@@ -176,6 +184,8 @@ public partial class MainWindow : Window
 
     private void ShowFromTrayImmediately()
     {
+        Opacity = 1;
+        ShowInTaskbar = true;
         IntPtr windowHandle = new WindowInteropHelper(this).EnsureHandle();
         WindowState = WindowState.Normal;
         if (!IsVisible)
@@ -295,6 +305,72 @@ public partial class MainWindow : Window
         }
 
         e.Handled = true;
+    }
+
+    private void GamepadListPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ListBox listBox)
+        {
+            return;
+        }
+
+        ScrollViewer? inner = FindVisualDescendant<ScrollViewer>(listBox);
+        if (inner is not null && inner.ExtentHeight > inner.ViewportHeight + 0.5)
+        {
+            return;
+        }
+
+        ScrollViewer? parent = FindVisualAncestor<ScrollViewer>(listBox);
+        if (parent is null)
+        {
+            return;
+        }
+
+        if (e.Delta > 0)
+        {
+            parent.LineUp();
+        }
+        else if (e.Delta < 0)
+        {
+            parent.LineDown();
+        }
+
+        e.Handled = true;
+    }
+
+    private static T? FindVisualDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            T? descendant = FindVisualDescendant<T>(child);
+            if (descendant is not null)
+            {
+                return descendant;
+            }
+        }
+
+        return null;
+    }
+
+    private static T? FindVisualAncestor<T>(DependencyObject element) where T : DependencyObject
+    {
+        for (DependencyObject? current = VisualTreeHelper.GetParent(element);
+             current is not null;
+             current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is T match)
+            {
+                return match;
+            }
+        }
+
+        return null;
     }
 
     private static ListBoxItem? FindGamepadItem(

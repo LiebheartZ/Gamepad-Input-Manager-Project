@@ -2,10 +2,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
-    <Version>0.16.22</Version>
-    <AssemblyVersion>0.16.22.0</AssemblyVersion>
-    <FileVersion>0.16.22.0</FileVersion>
-    <InformationalVersion>0.16.22</InformationalVersion>
+    <Version>0.1.7</Version>
+    <AssemblyVersion>0.1.7.0</AssemblyVersion>
+    <FileVersion>0.1.7.0</FileVersion>
+    <InformationalVersion>0.1.7</InformationalVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -37,13 +37,16 @@
     <None Update="ThirdParty\HIDMaestro\2.1.0\THIRD-PARTY-NOTICES.txt"
           CopyToOutputDirectory="PreserveNewest"
           TargetPath="Licenses\HIDMaestro\THIRD-PARTY-NOTICES.txt" />
-    <None Include="ThirdParty\SDL2\2.32.10\README-SDL.txt"
+    <None Include="ThirdParty\SDL2\2.32.74\README-SDL.txt"
           CopyToOutputDirectory="PreserveNewest"
           TargetPath="Licenses\SDL2\README-SDL.txt" />
   </ItemGroup>
   <Target Name="CopyUpdatedSdlRuntime" AfterTargets="CopyFilesToOutputDirectory">
-    <Copy SourceFiles="ThirdParty\SDL2\2.32.10\SDL2.dll"
+    <Copy SourceFiles="ThirdParty\SDL2\2.32.74\SDL2.dll"
           DestinationFiles="$(OutDir)SDL2.dll"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="ThirdParty\SDL2\2.32.74\SDL3.dll"
+          DestinationFiles="$(OutDir)SDL3.dll"
           SkipUnchangedFiles="true" />
   </Target>
 </Project>

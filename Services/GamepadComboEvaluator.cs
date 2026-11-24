@@ -82,6 +82,14 @@ public sealed class GamepadComboEvaluator
         }
     }
 
+    public void RemoveStale(ISet<string> activeDeviceKeys)
+    {
+        foreach (string key in _states.Keys.Where(key => !activeDeviceKeys.Contains(key)).ToArray())
+        {
+            _states.Remove(key);
+        }
+    }
+
     private static bool IsComboPressed(GamepadInputSnapshot snapshot, ControllerCombo combo)
     {
         if (combo.Buttons.Count == 0)

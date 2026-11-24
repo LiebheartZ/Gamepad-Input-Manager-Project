@@ -23,6 +23,9 @@ public sealed record ControllerListItem(
                     ? "Desconectado · Guardado"
                     : "Conectado · Guardado";
 
+    public string? BatteryInfoText => ConnectedDevice?.BatteryInfoText;
+    public bool HasBatteryInfo => ConnectedDevice?.HasBatteryInfo == true;
+    public string? ConnectionTransportText => ConnectedDevice?.ConnectionTransportText;
     public string? DeviceKey => ConnectedDevice?.DeviceKey;
     public bool IsConnected => ConnectedDevice is not null;
     public bool IsVirtualGamepad => ConnectedDevice?.IsVirtualGamepad == true;

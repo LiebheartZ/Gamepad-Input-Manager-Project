@@ -9,7 +9,8 @@ public sealed class LocalStoragePathService : IStoragePathService
     public string SettingsFilePath => Path.Combine(RootDirectory, "Settings", "app-settings.json");
     public string ControllersIndexFilePath => Path.Combine(RootDirectory, "Controllers", "controllers-index.json");
     public string ProfilesIndexFilePath => Path.Combine(RootDirectory, "Profiles", "profiles-index.json");
-    public string LogFilePath => Path.Combine(RootDirectory, "Logs", "gdm.log");
+    public string GlobalPresetFilePath => Path.Combine(RootDirectory, "Settings", "global-preset.json");
+    public string LogFilePath { get; }
 
     public LocalStoragePathService(string? rootDirectory = null)
     {
@@ -19,6 +20,33 @@ public sealed class LocalStoragePathService : IStoragePathService
                 "GDM");
 
         RootDirectory = Path.GetFullPath(path);
+        LogFilePath = ResolveLogFilePath(RootDirectory);
+    }
+
+    private static string ResolveLogFilePath(string rootDirectory)
+    {
+        string preferred = Path.Combine(AppContext.BaseDirectory, "Logs", "gdm.log");
+        try
+        {
+            string? directory = Path.GetDirectoryName(preferred);
+            if (directory is null)
+            {
+                return Path.Combine(rootDirectory, "Logs", "gdm.log");
+            }
+
+            Directory.CreateDirectory(directory);
+            string probePath = Path.Combine(directory, $".write-test-{Guid.NewGuid():N}.tmp");
+            File.WriteAllText(probePath, "ok");
+            File.Delete(probePath);
+            return preferred;
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+            UnauthorizedAccessException or
+            System.Security.SecurityException)
+        {
+            return Path.Combine(rootDirectory, "Logs", "gdm.log");
+        }
     }
 
     public string GetControllerFilePath(Guid controllerId)

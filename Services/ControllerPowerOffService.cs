@@ -202,48 +202,9 @@ public sealed class ControllerPowerOffService : IControllerPowerOffService
     private static bool TryFindDevInst(string instanceId, out int devInst)
     {
         devInst = 0;
-        IntPtr deviceInfoSet = SetupDiGetClassDevsW(
-            IntPtr.Zero,
-            IntPtr.Zero,
-            IntPtr.Zero,
-            DigcfAllClasses | DigcfPresent);
-        if (deviceInfoSet == IntPtr.Zero || deviceInfoSet == InvalidHandleValue)
-        {
-            return false;
-        }
-
-        try
-        {
-            var deviceInfoData = new SpDeviceInfoData
-            {
-                cbSize = Marshal.SizeOf<SpDeviceInfoData>()
-            };
-            var buffer = new StringBuilder(1024);
-            for (uint index = 0;
-                 SetupDiEnumDeviceInfo(deviceInfoSet, index, ref deviceInfoData);
-                 index++)
-            {
-                buffer.Clear();
-                if (SetupDiGetDeviceInstanceIdW(
-                        deviceInfoSet,
-                        ref deviceInfoData,
-                        buffer,
-                        buffer.Capacity,
-                        out _) &&
-                    string.Equals(buffer.ToString(), instanceId, StringComparison.OrdinalIgnoreCase))
-                {
-                    devInst = deviceInfoData.DevInst;
-                    return true;
-                }
-            }
-        }
-        finally
-        {
-            SetupDiDestroyDeviceInfoList(deviceInfoSet);
-        }
-
-        return false;
+        return CM_Locate_DevNodeW(out devInst, instanceId, 0) == 0;
     }
+
 
     private static string? GetDeviceInstanceId(int devInst)
     {
@@ -253,18 +214,7 @@ public sealed class ControllerPowerOffService : IControllerPowerOffService
             : null;
     }
 
-    private const uint DigcfPresent = 0x00000002;
-    private const uint DigcfAllClasses = 0x00000004;
-    private static readonly IntPtr InvalidHandleValue = new(-1);
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct SpDeviceInfoData
-    {
-        public int cbSize;
-        public Guid ClassGuid;
-        public int DevInst;
-        public IntPtr Reserved;
-    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct BluetoothFindRadioParams
@@ -272,30 +222,6 @@ public sealed class ControllerPowerOffService : IControllerPowerOffService
         internal const int Size = 4;
         public uint dwSize;
     }
-
-    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern IntPtr SetupDiGetClassDevsW(
-        IntPtr classGuid,
-        IntPtr enumerator,
-        IntPtr hwndParent,
-        uint flags);
-
-    [DllImport("setupapi.dll", SetLastError = true)]
-    private static extern bool SetupDiEnumDeviceInfo(
-        IntPtr deviceInfoSet,
-        uint memberIndex,
-        ref SpDeviceInfoData deviceInfoData);
-
-    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern bool SetupDiGetDeviceInstanceIdW(
-        IntPtr deviceInfoSet,
-        ref SpDeviceInfoData deviceInfoData,
-        StringBuilder deviceInstanceId,
-        int deviceInstanceIdSize,
-        out int requiredSize);
-
-    [DllImport("setupapi.dll", SetLastError = true)]
-    private static extern bool SetupDiDestroyDeviceInfoList(IntPtr deviceInfoSet);
 
     [DllImport("cfgmgr32.dll")]
     private static extern int CM_Get_Parent(
@@ -309,6 +235,12 @@ public sealed class ControllerPowerOffService : IControllerPowerOffService
         StringBuilder buffer,
         int bufferLength,
         int flags);
+    [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
+    private static extern int CM_Locate_DevNodeW(
+        out int devInst,
+        string deviceInstanceId,
+        int flags);
+
 
     [DllImport("bthprops.cpl", SetLastError = true)]
     private static extern IntPtr BluetoothFindFirstRadio(

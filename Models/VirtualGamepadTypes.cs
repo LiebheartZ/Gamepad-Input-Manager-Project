@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace GDM.Models;
 
 public sealed record VirtualGamepadTypeOption(string Id, string DisplayName);
@@ -5,6 +7,7 @@ public sealed record VirtualGamepadTypeOption(string Id, string DisplayName);
 public static class VirtualGamepadTypes
 {
     public const string Xbox360 = "xbox360";
+    public const string Auto = "auto";
     public const string DualShock4 = "dualshock4";
     public const string Default = Xbox360;
 
@@ -14,6 +17,7 @@ public static class VirtualGamepadTypes
 
     public static IReadOnlyList<VirtualGamepadTypeOption> Options { get; } =
     [
+        new(Auto, "Automático"),
         new(Xbox360, "Xbox 360"),
         new(DualShock4, "DualShock 4")
     ];
@@ -33,6 +37,9 @@ public static class VirtualGamepadTypes
         string.Equals(type, Xbox360, StringComparison.Ordinal) ||
         string.Equals(type, DualShock4, StringComparison.Ordinal);
 
+    public static bool IsAuto(string? type) =>
+        string.Equals(type, Auto, StringComparison.Ordinal);
+
     public static string Normalize(string? type) =>
         IsSupported(type) ? type! : Default;
 
@@ -46,9 +53,93 @@ public static class VirtualGamepadTypes
     {
         Xbox360 => "Xbox 360",
         DualShock4 => "DualShock 4",
+        Auto => "Automático",
         _ => "Desconocido"
     };
 
+    public static string? InferFromController(ControllerRecord? record)
+    {
+        if (record is null)
+        {
+            return null;
+        }
+
+        if (TryGetVendorId(record, out ushort vendorId))
+        {
+            if (vendorId == 0x045E)
+            {
+                return Xbox360;
+            }
+
+            if (vendorId == 0x054C)
+            {
+                return DualShock4;
+            }
+        }
+
+        string name = $"{record.Identity.Model} {record.DisplayName}";
+        if (name.Contains("xbox", StringComparison.OrdinalIgnoreCase))
+        {
+            return Xbox360;
+        }
+
+        if (name.Contains("sony", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("dualshock", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("dualsense", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("ps4", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("ps5", StringComparison.OrdinalIgnoreCase))
+        {
+            return DualShock4;
+        }
+
+        return null;
+    }
+
+    public static string? InferFromConnectedGamepad(ConnectedGamepad? device)
+    {
+        if (device is null)
+        {
+            return null;
+        }
+
+        if (device.VendorId == 0x045E)
+        {
+            return Xbox360;
+        }
+
+        if (device.VendorId == 0x054C)
+        {
+            return DualShock4;
+        }
+
+        string name = device.Name ?? string.Empty;
+        if (name.Contains("xbox", StringComparison.OrdinalIgnoreCase))
+        {
+            return Xbox360;
+        }
+
+        if (name.Contains("sony", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("dualshock", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("dualsense", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("ps4", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("ps5", StringComparison.OrdinalIgnoreCase))
+        {
+            return DualShock4;
+        }
+
+        return null;
+    }
+
+    private static bool TryGetVendorId(ControllerRecord record, out ushort vendorId)
+    {
+        vendorId = 0;
+        string? value = record.Identity.Evidence
+            .FirstOrDefault(evidence =>
+                evidence.Source == "SDL2" && evidence.Kind == "VendorId")
+            ?.Value;
+        return value is not null &&
+            ushort.TryParse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out vendorId);
+    }
     public static string HidMaestroProfileId(string type) =>
         HidMaestroProfileId(type, Xbox360VariantDefault);
 

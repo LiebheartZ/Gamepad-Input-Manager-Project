@@ -325,7 +325,22 @@ public sealed class HidHideService : IHidHideService
 
         if (!_deviceInstanceIdsByPath.TryGetValue(devicePath, out string? instanceId))
         {
-            instanceId = ResolveDeviceInstanceId(devicePath);
+            try
+            {
+                instanceId = ResolveDeviceInstanceId(devicePath);
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or
+                Win32Exception or
+                IOException)
+            {
+                WriteDiagnostic(
+                    DiagnosticLogLevel.Warning,
+                    $"No se pudo resolver la ruta SDL «{devicePath}» a un dispositivo HID; se trata como no oculto.",
+                    exception);
+                return false;
+            }
+
             _deviceInstanceIdsByPath[devicePath] = instanceId;
         }
 
@@ -613,7 +628,7 @@ public sealed class HidHideService : IHidHideService
         Exception? exception = null) =>
         _writeDiagnostic?.Invoke(level, message, exception);
 
-    private static string ResolveDeviceInstanceId(string devicePath)
+    internal static string ResolveDeviceInstanceId(string devicePath)
     {
         if (string.IsNullOrWhiteSpace(devicePath))
         {
@@ -643,7 +658,7 @@ public sealed class HidHideService : IHidHideService
         {
             throw new Win32Exception(
                 Marshal.GetLastWin32Error(),
-                "Windows no pudo relacionar la ruta SDL del mando con su dispositivo HID.");
+                $"Windows no pudo relacionar la ruta SDL del mando con su dispositivo HID. ruta=\"{devicePath}\"");
         }
 
         _ = NativeMethods.SetupDiGetDeviceInterfaceDetail(

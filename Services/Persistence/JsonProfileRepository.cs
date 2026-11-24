@@ -218,7 +218,8 @@ public sealed class JsonProfileRepository : IProfileRepository
         }
 
         if (profile.VirtualGamepadType is null ||
-            !VirtualGamepadTypes.IsSupported(profile.VirtualGamepadType))
+            (!VirtualGamepadTypes.IsSupported(profile.VirtualGamepadType) &&
+             !VirtualGamepadTypes.IsAuto(profile.VirtualGamepadType)))
         {
             throw new InvalidDataException(
                 "El tipo de mando virtual del perfil no es compatible.");

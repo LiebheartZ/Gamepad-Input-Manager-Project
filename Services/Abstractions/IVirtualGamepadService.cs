@@ -1,4 +1,4 @@
-using GDM.Models;
+﻿using GDM.Models;
 
 namespace GDM.Services.Abstractions;
 
@@ -9,7 +9,9 @@ public interface IVirtualGamepadService : IDisposable
     bool IsAdministrator { get; }
     string? SourceDeviceName { get; }
     bool IsRunningFor(string deviceKey);
+    event Action<string, int, int>? RumbleReceived;
     string? GetRunningVirtualGamepadType(string deviceKey);
+    GamepadInputSnapshot? TryGetVirtualOutputSnapshot(ConnectedGamepad virtualDevice);
     bool RebindDevice(string previousDeviceKey, ConnectedGamepad device);
     Task StartAsync(
         ConnectedGamepad device,
@@ -26,7 +28,8 @@ public interface IVirtualGamepadService : IDisposable
         ConnectedGamepad device,
         GamepadInputSnapshot snapshot,
         ControllerProfile? mappingProfile,
-        IReadOnlyCollection<string>? additionalTargetButtons = null);
+        IReadOnlyCollection<string>? additionalTargetButtons = null,
+        int? motionIntervalMs = null);
     Task StopAsync(string deviceKey, CancellationToken cancellationToken = default);
     Task StopAllAsync(CancellationToken cancellationToken = default);
 }

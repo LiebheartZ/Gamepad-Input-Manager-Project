@@ -12,7 +12,7 @@ public static class ComboActionTypes
     public static IReadOnlyList<ComboActionOption> Options { get; } =
     [
         new(Buttons, "Pulsar botones en el mando virtual"),
-        new(StopOutput, "Detener la salida virtual"),
+        new(StopOutput, "Alternar salida virtual (encender/apagar)"),
         new(SwitchType, "Cambiar tipo de mando virtual"),
         new(PowerOff, "Apagar el mando físico")
     ];

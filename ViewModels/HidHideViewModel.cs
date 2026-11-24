@@ -55,14 +55,35 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
         var connectedKeys = connectedDevices
             .Select(device => device.DeviceKey)
             .ToHashSet(StringComparer.Ordinal);
+        var connectedPaths = connectedDevices
+            .Select(device => device.DevicePath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         bool canManage = CanManageDevices;
 
         var targetStates = new List<(ConnectedGamepad Device, bool Hidden, HidHideControllerItem? Item)>(
             connectedDevices.Length);
         foreach (ConnectedGamepad device in connectedDevices)
         {
-            bool hidden = !string.IsNullOrWhiteSpace(device.DevicePath) &&
-                _service.IsHiddenByGdm(device.DevicePath);
+            bool hidden = false;
+            if (!string.IsNullOrWhiteSpace(device.DevicePath))
+            {
+                try
+                {
+                    hidden = _service.IsHiddenByGdm(device.DevicePath);
+                }
+                catch (Exception exception) when (
+                    exception is InvalidOperationException or
+                    System.ComponentModel.Win32Exception or
+                    IOException)
+                {
+                    _writeLog(
+                        DiagnosticLogLevel.Warning,
+                        $"No se pudo consultar el estado oculto de «{device.Name}».",
+                        exception);
+                }
+            }
+
             ConnectedGamepad displayDevice = device with { IsHiddenByGdm = hidden };
             existing.TryGetValue(device.DeviceKey, out HidHideControllerItem? item);
             targetStates.Add((displayDevice, hidden, item));
@@ -70,7 +91,27 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
 
         foreach (HidHideControllerItem item in existing.Values)
         {
-            if (!connectedKeys.Contains(item.Device.DeviceKey) && item.IsHiddenByGdm)
+            if (connectedKeys.Contains(item.Device.DeviceKey) ||
+                string.IsNullOrWhiteSpace(item.Device.DevicePath) ||
+                connectedPaths.Contains(item.Device.DevicePath))
+            {
+                continue;
+            }
+
+            bool stillHidden;
+            try
+            {
+                stillHidden = _service.IsHiddenByGdm(item.Device.DevicePath);
+            }
+            catch (Exception exception) when (
+                exception is InvalidOperationException or
+                System.ComponentModel.Win32Exception or
+                IOException)
+            {
+                continue;
+            }
+
+            if (stillHidden)
             {
                 targetStates.Add((item.Device, true, item));
             }
@@ -110,7 +151,7 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
 
     public IReadOnlyList<ConnectedGamepad> GetHiddenDevices() =>
         Devices
-            .Where(item => item.IsHiddenByGdm)
+            .Where(item => item.IsHiddenByGdm && !item.Device.IsRedundantInterface)
             .Select(item => item.Device with { IsHiddenByGdm = true })
             .ToArray();
 
@@ -361,7 +402,9 @@ public sealed class HidHideControllerItem : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ConnectedGamepad Device => _device;
-    public string Name => _device.Name;
+    public string Name => _device.IsRedundantInterface
+        ? $"{_device.Name} (interfaz secundaria)"
+        : _device.Name;
     public string HardwareIdLabel => _device.HardwareIdLabel;
     public bool CanManage => _canManage && !string.IsNullOrWhiteSpace(_device.DevicePath) && !_isBusy;
     public bool IsHiddenByGdm => _isHiddenByGdm;

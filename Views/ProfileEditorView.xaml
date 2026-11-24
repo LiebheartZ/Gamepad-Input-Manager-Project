@@ -5,11 +5,12 @@
     <StackPanel>
         <TextBlock FontSize="18"
                    FontWeight="SemiBold"
-                   Text="Detalles del perfil" />
+                   Text="{Binding EditorTitle}" />
         <WrapPanel Margin="0,14,0,0">
             <Button MinWidth="100"
                     Margin="0,0,8,8"
                     Padding="12,7"
+                    Visibility="{Binding IsNotEditingDeviceProfile, Converter={StaticResource BoolToVisibility}}"
                     Command="{Binding CreateCommand}"
                     Content="Nuevo" />
             <Button MinWidth="100"
@@ -20,31 +21,50 @@
             <Button MinWidth="100"
                     Margin="0,0,8,8"
                     Padding="12,7"
+                    Visibility="{Binding IsNotEditingDeviceProfile, Converter={StaticResource BoolToVisibility}}"
                     Command="{Binding DuplicateCommand}"
                     Content="Duplicar" />
             <Button MinWidth="100"
                     Margin="0,0,8,8"
                     Padding="12,7"
+                    Visibility="{Binding ShowRestoreButton, Converter={StaticResource BoolToVisibility}}"
+                    Command="{Binding RestoreCommand}"
+                    Content="Restaurar" />
+            <Button MinWidth="100"
+                    Margin="0,0,8,8"
+                    Padding="12,7"
+                    Visibility="{Binding ShowDeleteButton, Converter={StaticResource BoolToVisibility}}"
                     Command="{Binding DeleteCommand}"
                     Content="Eliminar" />
         </WrapPanel>
         <TextBlock Margin="0,8,0,0"
                    FontSize="11"
                    Foreground="{DynamicResource SecondaryTextBrush}"
+                   Visibility="{Binding IsNotEditingDeviceProfile, Converter={StaticResource BoolToVisibility}}"
                    Text="Escribe un nombre y pulsa Nuevo para crear un perfil; Guardar aplica los cambios al perfil seleccionado."
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,8,0,0"
+                   FontSize="11"
+                   Foreground="{DynamicResource SecondaryTextBrush}"
+                   Visibility="{Binding IsEditingDeviceProfile, Converter={StaticResource BoolToVisibility}}"
+                   Text="Esta configuración es propia de este mando y no se comparte con otros. Guarda los cambios para aplicarla a la salida virtual de este mando."
                    TextWrapping="Wrap" />
         <TextBlock Margin="0,14,0,5"
                    FontSize="12"
                    Foreground="{DynamicResource SecondaryTextBrush}"
+                   Visibility="{Binding IsNotEditingDeviceProfile, Converter={StaticResource BoolToVisibility}}"
                    Text="Nombre" />
         <TextBox MaxLength="80"
                  Padding="8,6"
+                 Visibility="{Binding IsNotEditingDeviceProfile, Converter={StaticResource BoolToVisibility}}"
                  Text="{Binding DraftName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
         <TextBlock Margin="0,12,0,5"
                    FontSize="12"
                    Foreground="{DynamicResource SecondaryTextBrush}"
+                   Visibility="{Binding IsNotEditingDeviceProfile, Converter={StaticResource BoolToVisibility}}"
                    Text="Descripción" />
         <TextBox MinHeight="76"
+                 Visibility="{Binding IsNotEditingDeviceProfile, Converter={StaticResource BoolToVisibility}}"
                  MaxLength="500"
                  Padding="8,6"
                  AcceptsReturn="True"
@@ -64,6 +84,13 @@
         <TextBlock Margin="0,6,0,0"
                    FontSize="11"
                    Foreground="{DynamicResource SecondaryTextBrush}"
+                   Visibility="{Binding IsEditingDeviceProfile, Converter={StaticResource BoolToVisibility}}"
+                   Text="Valor inicial según el fabricante del mando; puedes cambiarlo y se guarda en la configuración de este mando."
+                   TextWrapping="Wrap" />
+        <TextBlock Margin="0,6,0,0"
+                   FontSize="11"
+                   Foreground="{DynamicResource SecondaryTextBrush}"
+                   Visibility="{Binding IsNotEditingDeviceProfile, Converter={StaticResource BoolToVisibility}}"
                    Text="Cambiar el tipo reinicia las salidas virtuales que usen este perfil. El remapeo, las inversiones y las zonas muertas se guardan por separado para cada tipo."
                    TextWrapping="Wrap" />
         <Expander Margin="0,14,0,0">

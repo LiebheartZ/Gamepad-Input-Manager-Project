@@ -4,6 +4,14 @@ public sealed record ControllerProfile
 {
     public const int CurrentSchemaVersion = 1;
 
+    public static readonly Guid GlobalPresetId = new("7f3a9c1e-5b2d-4e8f-9a6c-1d4b7e2f5a8c");
+    public const string GlobalPresetName = "Ajuste global";
+    public const string GlobalPresetDescription =
+        "Perfil y ajustes aplicados por defecto a todos los mandos que usan el ajuste global.";
+
+    public static bool IsGlobalPreset(ControllerProfile? profile) =>
+        profile is not null && profile.ProfileId == GlobalPresetId;
+
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public Guid ProfileId { get; init; }
     public string DisplayName { get; init; } = string.Empty;

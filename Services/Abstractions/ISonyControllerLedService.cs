@@ -11,6 +11,8 @@ public enum SonyLedApplyResult
 
 public interface ISonyControllerLedService
 {
+    string? LastFailureDetail { get; }
+
     Task<SonyLedApplyResult> TrySetLightBarAsync(
         ConnectedGamepad device,
         byte red,

@@ -29,6 +29,8 @@ public sealed class SonyControllerLedService : ISonyControllerLedService
         new(StringComparer.OrdinalIgnoreCase);
     private readonly object _writeGate = new();
 
+    public string? LastFailureDetail { get; private set; }
+
     public Task<SonyLedApplyResult> TrySetLightBarAsync(
         ConnectedGamepad device,
         byte red,
@@ -79,6 +81,7 @@ public sealed class SonyControllerLedService : ISonyControllerLedService
                     IntPtr.Zero);
                 if (handle.IsInvalid)
                 {
+                    LastFailureDetail = $"CreateFile error={Marshal.GetLastWin32Error()}";
                     return SonyLedApplyResult.Failed;
                 }
 
@@ -98,6 +101,7 @@ public sealed class SonyControllerLedService : ISonyControllerLedService
 
                 if (!HidD_GetPreparsedData(handle, out IntPtr preparsedData))
                 {
+                    LastFailureDetail = $"HidD_GetPreparsedData error={Marshal.GetLastWin32Error()}";
                     return SonyLedApplyResult.Failed;
                 }
 
@@ -106,6 +110,7 @@ public sealed class SonyControllerLedService : ISonyControllerLedService
                 {
                     if (!HidP_GetCaps(preparsedData, out capabilities))
                     {
+                        LastFailureDetail = $"HidP_GetCaps error={Marshal.GetLastWin32Error()}";
                         return SonyLedApplyResult.Failed;
                     }
                 }
@@ -128,13 +133,16 @@ public sealed class SonyControllerLedService : ISonyControllerLedService
 
                 bool written = isUsb
                     ? WriteOutputReport(handle, report)
-                    : SetOutputReport(handle, report);
+                    : SetOutputReport(handle, report) || WriteOutputReport(handle, report);
                 if (!written)
                 {
                     _lastApplied.TryRemove(devicePath, out _);
+                    LastFailureDetail =
+                        $"Escritura de reporte LED fallida (usb={isUsb}) error={Marshal.GetLastWin32Error()}";
                     return SonyLedApplyResult.Failed;
                 }
 
+                LastFailureDetail = null;
                 _lastApplied[devicePath] = signature;
                 return SonyLedApplyResult.Applied;
             }
@@ -145,6 +153,7 @@ public sealed class SonyControllerLedService : ISonyControllerLedService
                 InvalidOperationException)
             {
                 _lastApplied.TryRemove(devicePath, out _);
+                LastFailureDetail = $"Excepción al aplicar LED: {exception.Message}";
                 return SonyLedApplyResult.Failed;
             }
         }
@@ -337,7 +346,7 @@ public sealed class SonyControllerLedService : ISonyControllerLedService
         SafeFileHandle hidDeviceObject,
         ref HIDD_ATTRIBUTES attributes);
 
-    [DllImport("hid.dll")]
+    [DllImport("hid.dll", SetLastError = true)]
     private static extern bool HidD_GetPreparsedData(
         SafeFileHandle hidDeviceObject,
         out IntPtr ppPreparsedData);
@@ -345,7 +354,7 @@ public sealed class SonyControllerLedService : ISonyControllerLedService
     [DllImport("hid.dll")]
     private static extern bool HidD_FreePreparsedData(IntPtr ppPreparsedData);
 
-    [DllImport("hid.dll")]
+    [DllImport("hid.dll", SetLastError = true)]
     private static extern bool HidP_GetCaps(
         IntPtr preparsedData,
         out HIDP_CAPS capabilities);

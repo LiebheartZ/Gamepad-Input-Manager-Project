@@ -78,6 +78,20 @@
                                FontSize="10"
                                Foreground="#C5D5E3"
                                Text="{Binding BuildTimestampLabel}" />
+                    <StackPanel Margin="0,4,0,0"
+                                HorizontalAlignment="Right"
+                                Orientation="Horizontal">
+                        <TextBlock FontFamily="Segoe MDL2 Assets"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Foreground="{Binding BluetoothStatusForeground}"
+                                   Text="&#xE701;" />
+                        <TextBlock Margin="5,0,0,0"
+                                   FontSize="10"
+                                   VerticalAlignment="Center"
+                                   Foreground="{Binding BluetoothStatusForeground}"
+                                   Text="{Binding BluetoothStatusText}" />
+                    </StackPanel>
                 </StackPanel>
             </Grid>
         </Border>
@@ -169,6 +183,7 @@
                                          BorderThickness="0"
                                          PreviewMouseLeftButtonDown="GamepadListPreviewMouseLeftButtonDown"
                                          PreviewMouseLeftButtonUp="GamepadListPreviewMouseLeftButtonUp"
+                                         PreviewMouseWheel="GamepadListPreviewMouseWheel"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="ListBoxItem">
@@ -286,7 +301,70 @@
                                 <TextBlock Margin="0,3,0,0"
                                            FontSize="11"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
-                                           Text="Firmware y batería: no disponibles mediante la API SDL actual." />
+                                           Text="{Binding Tester.SelectedDevice.BatteryInfoText}"
+                                           Visibility="{Binding Tester.SelectedDevice.HasBatteryInfo, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Margin="0,3,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="Firmware: no disponible mediante la API SDL actual." />
+                                <TextBlock Margin="0,12,0,4"
+                                           FontSize="12"
+                                           FontWeight="SemiBold"
+                                           Text="Probar vibración" />
+                                <WrapPanel>
+                                    <Button MinWidth="110"
+                                            Margin="0,0,8,0"
+                                            Command="{Binding Tester.RumbleWeakCommand}"
+                                            Content="Vibración suave"
+                                            ToolTip="Rumble suave durante 600 ms" />
+                                    <Button MinWidth="110"
+                                            Margin="0,0,8,0"
+                                            Command="{Binding Tester.RumbleStrongCommand}"
+                                            Content="Vibración fuerte"
+                                            ToolTip="Rumble fuerte durante 900 ms" />
+                                    <Button MinWidth="90"
+                                            Command="{Binding Tester.RumbleStopCommand}"
+                                            Content="Detener"
+                                            ToolTip="Detiene la vibración del mando" />
+                                </WrapPanel>
+                                 <TextBlock Margin="0,14,0,4"
+                                            FontSize="12"
+                                            FontWeight="SemiBold"
+                                            Text="Movimiento" />
+                                 <TextBlock FontSize="11"
+                                            Foreground="{DynamicResource SecondaryTextBrush}"
+                                            Text="{Binding Tester.MotionSensorsText}"
+                                            TextWrapping="Wrap" />
+                                 <StackPanel Margin="0,8,0,0"
+                                             Orientation="Horizontal"
+                                             Visibility="{Binding Tester.HasMotionData, Converter={StaticResource BoolToVisibility}}">
+                                     <Canvas Width="124" Height="124">
+                                         <Border Width="124" Height="124"
+                                                 Background="{DynamicResource PanelRaisedBrush}"
+                                                 BorderBrush="{DynamicResource SecondaryTextBrush}"
+                                                 BorderThickness="1"
+                                                 CornerRadius="10" />
+                                         <Ellipse Width="14" Height="14"
+                                                  Fill="{DynamicResource AccentBrush}"
+                                                  Canvas.Left="{Binding Tester.MotionDotLeft}"
+                                                  Canvas.Top="{Binding Tester.MotionDotTop}"
+                                                  ToolTip="Nivel de inclinación (acelerómetro)" />
+                                     </Canvas>
+                                     <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                                         <TextBlock FontSize="11"
+                                                    FontFamily="Consolas"
+                                                    Text="{Binding Tester.MotionAccelText}" />
+                                         <TextBlock Margin="0,6,0,0"
+                                                    FontSize="11"
+                                                    FontFamily="Consolas"
+                                                    Text="{Binding Tester.MotionGyroText}" />
+                                         <TextBlock Margin="0,8,0,0"
+                                                    FontSize="10"
+                                                    Foreground="{DynamicResource SecondaryTextBrush}"
+                                                    Text="La burbuja muestra la inclinación del mando."
+                                                    TextWrapping="Wrap" />
+                                     </StackPanel>
+                                 </StackPanel>
                             </StackPanel>
                         </Border>
 
@@ -470,7 +548,7 @@
                                         <Border Canvas.Left="184"
                                                 Canvas.Top="54"
                                                 Width="92"
-                                                Height="28"
+                                                Height="48"
                                                 BorderBrush="{DynamicResource SecondaryTextBrush}"
                                                 BorderThickness="1.5"
                                                 CornerRadius="6"
@@ -493,6 +571,24 @@
                                                        Text="TOUCH / EXTRA"
                                                        IsHitTestVisible="False" />
                                         </Border>
+                                        <Ellipse Width="10"
+                                                 Height="10"
+                                                 Fill="{DynamicResource AccentBrush}"
+                                                 Stroke="{DynamicResource PrimaryTextBrush}"
+                                                 StrokeThickness="1"
+                                                 Canvas.Left="{Binding Tester.TouchpadFinger0Left}"
+                                                 Canvas.Top="{Binding Tester.TouchpadFinger0Top}"
+                                                 Visibility="{Binding Tester.TouchpadFinger0Visible, Converter={StaticResource BoolToVisibility}}"
+                                                 IsHitTestVisible="False" />
+                                        <Ellipse Width="10"
+                                                 Height="10"
+                                                 Fill="{DynamicResource AccentBrush}"
+                                                 Stroke="{DynamicResource PrimaryTextBrush}"
+                                                 StrokeThickness="1"
+                                                 Canvas.Left="{Binding Tester.TouchpadFinger1Left}"
+                                                 Canvas.Top="{Binding Tester.TouchpadFinger1Top}"
+                                                 Visibility="{Binding Tester.TouchpadFinger1Visible, Converter={StaticResource BoolToVisibility}}"
+                                                 IsHitTestVisible="False" />
                                         <Border Canvas.Left="194"
                                                 Canvas.Top="119"
                                                 Width="30"
@@ -544,7 +640,7 @@
                                                        Text="≡" />
                                         </Border>
                                         <Ellipse Canvas.Left="217"
-                                                 Canvas.Top="87"
+                                                 Canvas.Top="140"
                                                  Width="26"
                                                  Height="26"
                                                  Stroke="{DynamicResource SecondaryTextBrush}"
@@ -561,7 +657,7 @@
                                                 </Style>
                                             </Ellipse.Style>
                                         </Ellipse>
-                                        <Path Data="M 223,100 L 237,100 M 230,93 L 230,107"
+                                        <Path Data="M 223,153 L 237,153 M 230,146 L 230,160"
                                               Stroke="{DynamicResource SecondaryTextBrush}"
                                               StrokeThickness="2"
                                               StrokeStartLineCap="Round"
@@ -738,6 +834,11 @@
                                 </Viewbox>
                                 <TextBlock Margin="0,0,0,12"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
+                                           FontFamily="Consolas"
+                                           Text="{Binding Tester.TouchpadText}"
+                                           Visibility="{Binding Tester.HasTouchpadSurface, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Margin="0,0,0,12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
                                            Text="Este mando no tiene un mapeo visual SDL; consulta los índices físicos de ejes y botones."
                                            Visibility="{Binding Tester.IsRawJoystick, Converter={StaticResource BoolToVisibility}}" />
                                 <TextBlock Margin="0,0,0,8"
@@ -896,7 +997,11 @@
                                                           FontSize="11"
                                                           Foreground="{DynamicResource SecondaryTextBrush}"
                                                           Text="{Binding DeviceKey}"
-                                                          Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisibility}}" />
+                                                          Visibility="{Binding IsConnected, Converter={StaticResource BoolToVisibility}}" />                                               <TextBlock Margin="0,3,0,0"
+                                                          FontSize="11"
+                                                          Foreground="{DynamicResource SecondaryTextBrush}"
+                                                          Text="{Binding BatteryInfoText}"
+                                                          Visibility="{Binding HasBatteryInfo, Converter={StaticResource BoolToVisibility}}" />
                                            </StackPanel>
                                            <TextBlock Grid.Column="1"
                                                       Margin="16,0,0,0"
@@ -1110,8 +1215,9 @@
                                            Text="Configuración de mandos" />
                                 <TextBlock Margin="0,10,0,0"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
-                                           Text="Guarda mandos desde la pestaña Mandos. Configura inicio automático, perfiles, remapeo y ocultamiento automático desde Perfiles."
+                                           Text="Guarda mandos desde la pestaña Mandos. Configura inicio automático, perfiles, remapeo desde Perfiles."
                                            TextWrapping="Wrap" />
+
                                 <TextBlock Margin="0,14,0,5"
                                            FontSize="12"
                                            Text="Tipo de mando virtual predeterminado" />
@@ -1124,9 +1230,9 @@
                                 <TextBlock Margin="0,6,0,0"
                                            FontSize="11"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
-                                           Text="Se usa en los mandos sin perfil asignado y en las salidas iniciadas desde Tester. Los perfiles guardados pueden definir su propio tipo."
+                                           Text="«Automático» elige DualShock 4 para mandos PlayStation y Xbox 360 para Xbox; si no se detecta el fabricante usa Xbox 360. Los perfiles pueden anularlo con su propio tipo."
                                            TextWrapping="Wrap" />
-                                <TextBlock Margin="0,14,0,5"
+                                <TextBlock Margin="0,12,0,5"
                                            FontSize="12"
                                            Text="Perfil HIDMaestro para Xbox 360" />
                                 <ComboBox Width="220"
@@ -1140,31 +1246,9 @@
                                            Foreground="{DynamicResource SecondaryTextBrush}"
                                            Text="Perfil que HIDMaestro usa para crear el mando virtual Xbox 360. Se aplica al iniciar o reiniciar cualquier salida Xbox 360, incluidas las de perfiles que usan ese tipo."
                                            TextWrapping="Wrap" />
-                                <TextBlock Margin="0,14,0,5"
-                                           FontSize="12"
-                                           Text="Perfil predeterminado para mandos nuevos" />
-                                <ComboBox Width="220"
-                                          HorizontalAlignment="Left"
-                                          ItemsSource="{Binding Profiles.AssignmentChoices}"
-                                          DisplayMemberPath="DisplayName"
-                                          SelectedValuePath="ProfileId"
-                                          SelectedValue="{Binding Settings.DefaultProfileId, Mode=TwoWay}" />
-                                <TextBlock Margin="0,6,0,0"
-                                           FontSize="11"
-                                           Foreground="{DynamicResource SecondaryTextBrush}"
-                                           Text="Al guardar un mando nuevo se le asigna este perfil automáticamente. «Sin perfil» desactiva la asignación automática; la asignación manual desde Perfiles no cambia."
-                                           TextWrapping="Wrap" />
-                                <CheckBox Margin="0,18,0,0"
-                                          Content="Mostrar los mandos ocultos al cerrar GDM"
-                                          IsChecked="{Binding Settings.RestoreGamepadsOnExit, Mode=TwoWay}" />
-                                <TextBlock Margin="24,6,0,0"
-                                           FontSize="11"
-                                           Foreground="{DynamicResource SecondaryTextBrush}"
-                                           Text="Si está activado, los mandos que GDM ocultó vuelven a mostrarse al cerrar GDM. Si está desactivado, permanecen en la lista negra de HidHide hasta que los muestres manualmente desde la pestaña HidHide."
-                                           TextWrapping="Wrap" />
                                 <TextBlock Margin="0,12,0,0"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
-                                           Text="La vibración y la transferencia de sensores aún no están disponibles."
+                                           Text="La vibración y el movimiento (acelerómetro/giróscopo, solo DualShock 4) se configuran por mando en Perfiles > Otros."
                                            TextWrapping="Wrap" />
                             </StackPanel>
 
@@ -1278,20 +1362,6 @@
                                            FontSize="11"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
                                            Text="Por defecto los mandos virtuales de HIDMaestro solo aparecen en Mandos y Tester, marcados como «Mando virtual». Activa esta opción para verlos también en HidHide y el resto de listas de dispositivos."
-                                           TextWrapping="Wrap" />
-                                <TextBlock Margin="0,18,0,5"
-                                           FontSize="12"
-                                           Text="Intervalo de sondeo de entrada virtual" />
-                                <ComboBox Width="260"
-                                          HorizontalAlignment="Left"
-                                          ItemsSource="{Binding Settings.VirtualInputPollIntervalOptions}"
-                                          DisplayMemberPath="Label"
-                                          SelectedValuePath="Value"
-                                          SelectedValue="{Binding Settings.VirtualInputPollIntervalMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                <TextBlock Margin="0,6,0,0"
-                                           FontSize="11"
-                                           Foreground="{DynamicResource SecondaryTextBrush}"
-                                           Text="Cuanto menor sea el intervalo, menor latencia pero mayor consumo de CPU. 8 ms es el valor por defecto; 16-33 ms reduce notablemente el uso sin perdida perceptible en la mayoria de casos."
                                            TextWrapping="Wrap" />
                                 <Button Margin="0,18,0,0"
                                         HorizontalAlignment="Left"
@@ -1418,7 +1488,7 @@
                 </StackPanel>
 
                 <StackPanel Visibility="{Binding IsProfilesSection, Converter={StaticResource BoolToVisibility}}">
-                    <TabControl ItemsSource="{Binding Profiles.VirtualGamepads}"
+                    <TabControl ItemsSource="{Binding Profiles.PerfilesTabs}"
                                 SelectedItem="{Binding Profiles.SelectedVirtualGamepad, Mode=TwoWay}"
                                 Background="Transparent"
                                 BorderThickness="0">
@@ -1473,9 +1543,19 @@
                         </TabControl.ItemTemplate>
                         <TabControl.ContentTemplate>
                             <DataTemplate>
+                                <Grid>
                                 <TabControl Margin="0,12,0,0"
                                             Background="Transparent"
                                             BorderThickness="0">
+                                    <TabControl.Style>
+                                        <Style TargetType="TabControl">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsGlobalPresetEditor}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TabControl.Style>
                                     <TabItem Header="Mando virtual">
                                         <StackPanel Margin="16,14,16,16">
                                             <Border Padding="14"
@@ -1483,6 +1563,7 @@
                                                     BorderBrush="{DynamicResource BorderBrush}"
                                                     BorderThickness="1"
                                                     CornerRadius="8">
+                                                <StackPanel>
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition Width="*" />
@@ -1508,6 +1589,64 @@
                                                            FontSize="11"
                                                            Text="{Binding StatusMessage}"
                                                            TextWrapping="Wrap" />
+                                                <TextBlock Margin="0,8,0,0"
+                                                           FontSize="10"
+                                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                                           Text="Las opciones personalizadas anulan el ajuste global; el resto lo hereda." />
+                                                <WrapPanel Margin="0,6,0,0">
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Margin="0,0,10,4"
+                                                                Visibility="{Binding IsAutoStartOverridden, Converter={StaticResource BoolToVisibility}}">
+                                                        <TextBlock Text="Inicio automático: personalizado"
+                                                                   FontSize="11"
+                                                                   VerticalAlignment="Center" />
+                                                        <Button Margin="8,0,0,0"
+                                                                Padding="8,2"
+                                                                FontSize="10"
+                                                                Content="Usar ajuste global"
+                                                                Command="{Binding ResetSettingCommand}"
+                                                                CommandParameter="autoStart" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Margin="0,0,10,4"
+                                                                Visibility="{Binding IsAutoHideOverridden, Converter={StaticResource BoolToVisibility}}">
+                                                        <TextBlock Text="Ocultar físico: personalizado"
+                                                                   FontSize="11"
+                                                                   VerticalAlignment="Center" />
+                                                        <Button Margin="8,0,0,0"
+                                                                Padding="8,2"
+                                                                FontSize="10"
+                                                                Content="Usar ajuste global"
+                                                                Command="{Binding ResetSettingCommand}"
+                                                                CommandParameter="autoHide" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Margin="0,0,10,4"
+                                                                Visibility="{Binding IsVibrationOverridden, Converter={StaticResource BoolToVisibility}}">
+                                                        <TextBlock Text="Vibración: personalizada"
+                                                                   FontSize="11"
+                                                                   VerticalAlignment="Center" />
+                                                        <Button Margin="8,0,0,0"
+                                                                Padding="8,2"
+                                                                FontSize="10"
+                                                                Content="Usar ajuste global"
+                                                                Command="{Binding ResetSettingCommand}"
+                                                                CommandParameter="vibration" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Margin="0,0,10,4"
+                                                                Visibility="{Binding IsKeepHiddenOverridden, Converter={StaticResource BoolToVisibility}}">
+                                                        <TextBlock Text="Mantener oculto: personalizado"
+                                                                   FontSize="11"
+                                                                   VerticalAlignment="Center" />
+                                                        <Button Margin="8,0,0,0"
+                                                                Padding="8,2"
+                                                                FontSize="10"
+                                                                Content="Usar ajuste global"
+                                                                Command="{Binding ResetSettingCommand}"
+                                                                CommandParameter="keepHidden" />
+                                                    </StackPanel>
+                                                </WrapPanel>
                                             </StackPanel>
                                             <WrapPanel Grid.Column="1"
                                                        VerticalAlignment="Center">
@@ -1521,103 +1660,59 @@
                                                         Command="{Binding StopCommand}"
                                                         CommandParameter="{Binding}"
                                                         Content="Detener" />
-                                                <ToggleButton Width="160"
-                                                              MinHeight="52"
-                                                              Padding="8,5"
-                                                              IsChecked="{Binding AutoStartOnConnect, Mode=OneWay}"
-                                                              Command="{Binding ToggleAutoStartCommand}"
-                                                              CommandParameter="{Binding}"
-                                                              ToolTip="Activa o desactiva el inicio automático de este mando">
-                                                    <ToggleButton.Template>
-                                                        <ControlTemplate TargetType="ToggleButton">
-                                                            <Border x:Name="SwitchBorder"
-                                                                    Padding="{TemplateBinding Padding}"
-                                                                    Background="{DynamicResource ButtonBrush}"
-                                                                    BorderBrush="{DynamicResource ButtonBorderBrush}"
-                                                                    BorderThickness="1"
-                                                                    CornerRadius="5">
-                                                                <StackPanel>
-                                                                    <ContentPresenter HorizontalAlignment="Center"
-                                                                                      Content="Inicio automático"
-                                                                                      TextElement.Foreground="{DynamicResource PrimaryTextBrush}" />
-                                                                    <StackPanel Margin="0,5,0,0"
-                                                                                HorizontalAlignment="Center"
-                                                                                Orientation="Horizontal">
-                                                                        <Grid Width="38"
-                                                                              Height="20"
-                                                                              VerticalAlignment="Center">
-                                                                            <Border x:Name="SwitchTrack"
-                                                                                    Background="{DynamicResource BorderBrush}"
-                                                                                    CornerRadius="10" />
-                                                                            <Ellipse x:Name="SwitchThumb"
-                                                                                     Width="14"
-                                                                                     Height="14"
-                                                                                     Margin="3"
-                                                                                     HorizontalAlignment="Left"
-                                                                                     Fill="White" />
-                                                                        </Grid>
-                                                                        <TextBlock x:Name="SwitchState"
-                                                                                   Margin="7,0,0,0"
-                                                                                   VerticalAlignment="Center"
-                                                                                   FontSize="11"
-                                                                                   FontWeight="Bold"
-                                                                                   Foreground="{DynamicResource SecondaryTextBrush}"
-                                                                                   Text="DESACTIVADO" />
-                                                                    </StackPanel>
-                                                                </StackPanel>
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsChecked" Value="True">
-                                                                    <Setter TargetName="SwitchTrack"
-                                                                            Property="Background"
-                                                                            Value="{DynamicResource ConnectedStatusBrush}" />
-                                                                    <Setter TargetName="SwitchThumb"
-                                                                            Property="HorizontalAlignment"
-                                                                            Value="Right" />
-                                                                    <Setter TargetName="SwitchState"
-                                                                            Property="Foreground"
-                                                                            Value="{DynamicResource ConnectedStatusBrush}" />
-                                                                    <Setter TargetName="SwitchState"
-                                                                            Property="Text"
-                                                                            Value="ACTIVADO" />
-                                                                    <Setter TargetName="SwitchBorder"
-                                                                            Property="BorderBrush"
-                                                                            Value="{DynamicResource ConnectedStatusBrush}" />
-                                                                </Trigger>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter TargetName="SwitchBorder"
-                                                                            Property="BorderBrush"
-                                                                            Value="{DynamicResource AccentBrush}" />
-                                                                </Trigger>
-                                                                <Trigger Property="IsKeyboardFocused" Value="True">
-                                                                    <Setter TargetName="SwitchBorder"
-                                                                            Property="BorderBrush"
-                                                                            Value="{DynamicResource AccentBrush}" />
-                                                                </Trigger>
-                                                                <Trigger Property="IsEnabled" Value="False">
-                                                                    <Setter Property="Opacity" Value="0.55" />
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </ToggleButton.Template>
-                                                </ToggleButton>
-                                                <CheckBox Margin="12,0,0,0"
-                                                          VerticalAlignment="Center"
-                                                          IsChecked="{Binding AutoHideOnConnect, Mode=OneWay}"
-                                                          Command="{Binding ToggleAutoHideCommand}"
-                                                          CommandParameter="{Binding}"
-                                                          Content="Ocultar automáticamente"
-                                                          ToolTip="Oculta el mando físico solo después de iniciar correctamente su mando virtual." />
-                                                <CheckBox Margin="12,0,0,0"
-                                                          VerticalAlignment="Center"
-                                                          IsEnabled="{Binding AutoHideOnConnect}"
-                                                          IsChecked="{Binding KeepHiddenOnExit, Mode=OneWay}"
-                                                          Command="{Binding ToggleKeepHiddenOnExitCommand}"
-                                                          CommandParameter="{Binding}"
-                                                          Content="Mantener oculto al cerrar GDM"
-                                                          ToolTip="Conserva este mando en la lista negra de HidHide al cerrar GDM. Seguirá oculto al volver a abrir GDM hasta que lo muestres desde la pestaña HidHide." />
                                             </WrapPanel>
                                         </Grid>
+                                        <WrapPanel Margin="0,10,0,0">
+                                            <StackPanel Margin="0,0,14,8"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock FontSize="12"
+                                                           Text="Inicio automático" />
+                                                <ComboBox Width="170"
+                                                          Margin="0,4,0,0"
+                                                          HorizontalAlignment="Left"
+                                                          ItemsSource="{Binding TriStateOptions}"
+                                                          DisplayMemberPath="Label"
+                                                          SelectedValuePath="Value"
+                                                          SelectedValue="{Binding AutoStartState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Margin="0,0,14,8"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock FontSize="12"
+                                                           Text="Ocultar físico" />
+                                                <ComboBox Width="170"
+                                                          Margin="0,4,0,0"
+                                                          HorizontalAlignment="Left"
+                                                          ItemsSource="{Binding TriStateOptions}"
+                                                          DisplayMemberPath="Label"
+                                                          SelectedValuePath="Value"
+                                                          SelectedValue="{Binding AutoHideState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Margin="0,0,14,8"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock FontSize="12"
+                                                           Text="Vibración" />
+                                                <ComboBox Width="170"
+                                                          Margin="0,4,0,0"
+                                                          HorizontalAlignment="Left"
+                                                          ItemsSource="{Binding TriStateOptions}"
+                                                          DisplayMemberPath="Label"
+                                                          SelectedValuePath="Value"
+                                                          SelectedValue="{Binding VibrationState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Margin="0,0,14,8"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock FontSize="12"
+                                                           Text="Mantener oculto" />
+                                                <ComboBox Width="170"
+                                                          Margin="0,4,0,0"
+                                                          HorizontalAlignment="Left"
+                                                          ItemsSource="{Binding TriStateOptions}"
+                                                          DisplayMemberPath="Label"
+                                                          SelectedValuePath="Value"
+                                                          SelectedValue="{Binding KeepHiddenState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </WrapPanel>
+                                                </StackPanel>
                                     </Border>
                                         </StackPanel>
                                     </TabItem>
@@ -1635,7 +1730,7 @@
                                                        Text="Perfil asignado" />
                                             <TextBlock Margin="0,5,0,12"
                                                        Foreground="{DynamicResource SecondaryTextBrush}"
-                                                       Text="El perfil elegido se aplica a la salida virtual de este mando. «Sin perfil» elimina la asignación actual."
+                                                       Text="El perfil elegido se aplica a la salida virtual de este mando. «Perfil por mando» usa una configuración propia de este mando; los perfiles compartidos se editan desde la pestaña «Ajuste global»."
                                                        TextWrapping="Wrap" />
                                             <WrapPanel>
                                                 <ComboBox MinWidth="220"
@@ -1657,10 +1752,243 @@
                                         </StackPanel>
                                     </Border>
                                     <views:ProfileEditorView Margin="0,16,0,0"
+                                                             Visibility="{Binding DataContext.Profiles.IsEditingDeviceProfile, Converter={StaticResource BoolToVisibility}, RelativeSource={RelativeSource AncestorType=Window}}"
                                                              DataContext="{Binding DataContext.Profiles, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                    <TextBlock Margin="0,16,0,0"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                               Visibility="{Binding DataContext.Profiles.IsEditingDeviceProfile, Converter={StaticResource InverseBoolToVisibility}, RelativeSource={RelativeSource AncestorType=Window}}"
+                                               Text="Este mando usa un perfil compartido («Ajuste global» o un perfil creado). Para ver u ocultar su configuración, selecciona «Perfil por mando»; para crear o editar perfiles compartidos, abre la pestaña «Ajuste global» → «Perfil»."
+                                               TextWrapping="Wrap" />
                                         </StackPanel>
                                     </TabItem>
-                                    <TabItem Header="Otros">
+                                    <TabItem Header="Batería">
+                                        <StackPanel Margin="16,14,16,16">
+                                            <Border Padding="18"
+                                                    Background="{DynamicResource PanelBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <StackPanel>
+                                                    <TextBlock FontSize="16"
+                                                               FontWeight="SemiBold"
+                                                               Text="Batería y carga" />
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               FontSize="12"
+                                                               FontWeight="SemiBold"
+                                                               Text="{Binding BatteryInfoText}" />
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="SDL2 informa el nivel de batería como Vacío, Baja, Media o Llena, y si el mando está cargando o conectado por cable. El porcentaje exacto no está disponible para todos los modelos."
+                                                               TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Margin="0,14,0,0"
+                                                    Padding="18"
+                                                    Background="{DynamicResource PanelBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <StackPanel>
+                                                    <TextBlock FontSize="16"
+                                                               FontWeight="SemiBold"
+                                                               Text="Alertas de batería" />
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Margin="0,8,0,0"
+                                                                Visibility="{Binding IsBatteryOverridden, Converter={StaticResource BoolToVisibility}}">
+                                                        <TextBlock Text="Alertas de batería: personalizadas"
+                                                                   FontSize="11"
+                                                                   VerticalAlignment="Center" />
+                                                        <Button Margin="8,0,0,0"
+                                                                Padding="8,2"
+                                                                FontSize="10"
+                                                                Content="Usar ajuste global"
+                                                                Command="{Binding ResetSettingCommand}"
+                                                                CommandParameter="battery" />
+                                                    </StackPanel>
+                                                    <TextBlock Margin="0,10,0,0"
+                                                               FontSize="12"
+                                                               Text="Activar alertas de batería" />
+                                                    <ComboBox Width="200"
+                                                              HorizontalAlignment="Left"
+                                                              Margin="0,4,0,0"
+                                                              ItemsSource="{Binding TriStateOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Value"
+                                                              SelectedValue="{Binding BatteryAlertState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,12,0,4"
+                                                               FontSize="12"
+                                                               Text="Avisar cuando la batería esté en o por debajo de" />
+                                                    <ComboBox Width="240"
+                                                              HorizontalAlignment="Left"
+                                                              ItemsSource="{Binding BatteryAlertLevelOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Level"
+                                                              SelectedValue="{Binding BatteryAlertLevelSelection, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,12,0,0"
+                                                               FontSize="12"
+                                                               Text="Notificación en la aplicación" />
+                                                    <ComboBox Width="200"
+                                                              HorizontalAlignment="Left"
+                                                              Margin="0,4,0,0"
+                                                              ItemsSource="{Binding TriStateOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Value"
+                                                              SelectedValue="{Binding BatteryNotifyState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,12,0,0"
+                                                               FontSize="12"
+                                                               Text="Sonido de alerta" />
+                                                    <ComboBox Width="200"
+                                                              HorizontalAlignment="Left"
+                                                              Margin="0,4,0,0"
+                                                              ItemsSource="{Binding TriStateOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Value"
+                                                              SelectedValue="{Binding BatterySoundState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Margin="0,14,0,0"
+                                                    Padding="18"
+                                                    Background="{DynamicResource PanelBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <StackPanel>
+                                                    <TextBlock FontSize="16"
+                                                               FontWeight="SemiBold"
+                                                               Text="Cambiar el color del LED" />
+                                                    <TextBlock Margin="0,10,0,0"
+                                                               FontSize="12"
+                                                               Text="Cambiar el color del LED al detectar batería baja" />
+                                                    <ComboBox Width="200"
+                                                              HorizontalAlignment="Left"
+                                                              Margin="0,4,0,0"
+                                                              ItemsSource="{Binding TriStateOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Value"
+                                                              SelectedValue="{Binding BatteryAlertColorState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,10,0,0"
+                                                               FontSize="12"
+                                                               Text="Color de la alerta" />
+                                                    <CheckBox Margin="0,4,0,0"
+                                                              VerticalAlignment="Center"
+                                                              Content="Usar ajuste global"
+                                                              IsChecked="{Binding BatteryAlertColorInherits, Mode=TwoWay}" />
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Margin="0,6,0,0"
+                                                                IsEnabled="{Binding BatteryAlertColorInherits, Converter={StaticResource InverseBool}}">
+                                                        <Border Width="34"
+                                                                Height="20"
+                                                                Margin="0,0,10,0"
+                                                                VerticalAlignment="Center"
+                                                                Background="{Binding BatteryAlertColorPreview}"
+                                                                BorderBrush="{DynamicResource BorderBrush}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="3" />
+                                                        <Button Padding="10,3"
+                                                                Content="Elegir color…"
+                                                                Command="{Binding PickBatteryColorCommand}" />
+                                                    </StackPanel>
+                                                    <TextBlock Margin="0,8,0,0"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="Mientras la alerta esté activa, este color tiene prioridad sobre el configurado en «Otros». Al recuperarse la batería, el mando vuelve a su color anterior."
+                                                               TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Margin="0,14,0,0"
+                                                    Padding="18"
+                                                    Background="{DynamicResource PanelBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <StackPanel>
+                                                    <TextBlock FontSize="16"
+                                                               FontWeight="SemiBold"
+                                                               Text="Efectos de LED" />
+                                                    <TextBlock Margin="0,10,0,0"
+                                                               FontSize="12"
+                                                               Text="Aplicar efecto de LED al detectar batería baja" />
+                                                    <ComboBox Width="200"
+                                                              HorizontalAlignment="Left"
+                                                              Margin="0,4,0,0"
+                                                              ItemsSource="{Binding TriStateOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Value"
+                                                              SelectedValue="{Binding BatteryAlertEffectState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,12,0,4"
+                                                               FontSize="12"
+                                                               Text="Efecto" />
+                                                    <ComboBox Width="240"
+                                                              HorizontalAlignment="Left"
+                                                              ItemsSource="{Binding BatteryAlertEffectOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Value"
+                                                              SelectedValue="{Binding BatteryAlertEffectSelection, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,12,0,4"
+                                                               FontSize="12"
+                                                               Text="Efecto al cargar" />
+                                                    <ComboBox Width="240"
+                                                              HorizontalAlignment="Left"
+                                                              ItemsSource="{Binding ChargingLedEffectOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Value"
+                                                              SelectedValue="{Binding ChargingLedEffectSelection, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,12,0,4"
+                                                               FontSize="12"
+                                                               Text="Efectos por color (mandos sin control de brillo)" />
+                                                    <ComboBox Width="240"
+                                                              HorizontalAlignment="Left"
+                                                              ItemsSource="{Binding TriStateOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Value"
+                                                              SelectedValue="{Binding LedColorIntensityState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,8,0,0"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="Los efectos no cambian el color: los pulsos y el desvanecido se aplican sobre el color activo del mando. «Efecto al cargar» se activa mientras el mando esté cargando o conectado por cable. Solo disponible en mandos Sony con barra de luz."
+                                                               TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Margin="0,14,0,0"
+                                                    Padding="18"
+                                                    Background="{DynamicResource PanelBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <StackPanel>
+                                                    <TextBlock FontSize="16"
+                                                               FontWeight="SemiBold"
+                                                               Text="Apagado del mando" />
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="{Binding PowerOffSupportText}"
+                                                               TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,12,0,4"
+                                                               FontSize="12"
+                                                               Text="Apagar tras inactividad" />
+                                                    <ComboBox Width="200"
+                                                              HorizontalAlignment="Left"
+                                                              ItemsSource="{Binding PowerOffIdleOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Seconds"
+                                                              SelectedValue="{Binding PowerOffIdleSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="El temporizador se reinicia con cualquier cambio en los controles del mando."
+                                                               TextWrapping="Wrap" />
+                                                    <Button Margin="0,12,0,0"
+                                                            HorizontalAlignment="Left"
+                                                            MinWidth="140"
+                                                            Padding="12,6"
+                                                            Command="{Binding PowerOffCommand}"
+                                                            CommandParameter="{Binding}"
+                                                            Content="Apagar mando ahora" />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </TabItem>                                    <TabItem Header="Otros">
                                         <StackPanel Margin="16,14,16,16">
                                             <Border Padding="18"
                                                     Background="{DynamicResource PanelBrush}"
@@ -1671,12 +1999,16 @@
                                                     <TextBlock FontSize="16"
                                                                FontWeight="SemiBold"
                                                                Text="LED del mando" />
+                                                    <CheckBox Margin="0,8,0,0"
+                                                              VerticalAlignment="Center"
+                                                              Content="Usar ajuste global"
+                                                              IsChecked="{Binding LedInheritsGlobal, Mode=TwoWay}" />
                                                     <TextBlock Margin="0,6,0,0"
                                                                Foreground="{DynamicResource SecondaryTextBrush}"
                                                                Text="{Binding LedSupportText}"
                                                                TextWrapping="Wrap" />
                                                     <StackPanel Margin="0,12,0,0"
-                                                                Visibility="{Binding HasLedSupport, Converter={StaticResource BoolToVisibility}}">
+                                                                IsEnabled="{Binding LedInheritsGlobal, Converter={StaticResource InverseBool}}">
                                                         <TextBlock FontSize="12"
                                                                    Text="Modo de color" />
                                                         <ComboBox Width="280"
@@ -1781,6 +2113,21 @@
                                                             El LED del mando físico se pondrá verde mientras la salida virtual sea Xbox 360 y azul mientras sea DualShock 4; se apagará al detener la salida.
                                                         </TextBlock>
                                                     </StackPanel>
+                                                    <TextBlock Margin="0,12,0,0"
+                                                               FontSize="12"
+                                                               Text="Ignorar señales de color externas: mantener el color configurado" />
+                                                    <ComboBox Width="200"
+                                                              HorizontalAlignment="Left"
+                                                              Margin="0,4,0,0"
+                                                              ItemsSource="{Binding TriStateOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Value"
+                                                              SelectedValue="{Binding IgnoreExternalState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="Si juegos u otros programas cambian el color del LED del mando físico, GDM vuelve a aplicar el color configurado cada 2 segundos."
+                                                               TextWrapping="Wrap" />
                                                 </StackPanel>
                                             </Border>
                                             <Border Margin="0,14,0,0"
@@ -1792,58 +2139,591 @@
                                                 <StackPanel>
                                                     <TextBlock FontSize="16"
                                                                FontWeight="SemiBold"
-                                                               Text="Apagado del mando" />
-                                                    <TextBlock Margin="0,6,0,0"
-                                                               Foreground="{DynamicResource SecondaryTextBrush}"
-                                                               Text="{Binding PowerOffSupportText}"
-                                                               TextWrapping="Wrap" />
-                                                    <TextBlock Margin="0,12,0,4"
-                                                               FontSize="12"
-                                                               Text="Apagar tras inactividad" />
-                                                    <ComboBox Width="200"
-                                                              HorizontalAlignment="Left"
-                                                              ItemsSource="{Binding PowerOffIdleOptions}"
-                                                              DisplayMemberPath="Label"
-                                                              SelectedValuePath="Seconds"
-                                                              SelectedValue="{Binding PowerOffIdleSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                               Text="Reinicio del dispositivo" />
+                                                    <CheckBox Margin="0,10,0,0"
+                                                              VerticalAlignment="Center"
+                                                              Content="Reiniciar el mando físico al iniciar la salida virtual"
+                                                              IsChecked="{Binding RestartPhysicalDeviceOnVirtualStart, Mode=TwoWay}" />
                                                     <TextBlock Margin="0,6,0,0"
                                                                FontSize="11"
                                                                Foreground="{DynamicResource SecondaryTextBrush}"
-                                                               Text="El temporizador se reinicia con cualquier cambio en los controles del mando."
+                                                               Text="Deshabilita y rehabilita el dispositivo en Windows para cerrar identificadores abiertos por juegos u otros programas que sigan viendo el mando físico oculto. Úsalo solo si un juego detecta el mando original además del virtual; el mando se desconecta brevemente."
+                                                               TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Margin="0,14,0,0"
+                                                    Padding="18"
+                                                    Background="{DynamicResource PanelBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <StackPanel>
+                                                    <TextBlock FontSize="16"
+                                                               FontWeight="SemiBold"
+                                                               Text="Sondeo de entrada" />
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Margin="0,8,0,0"
+                                                                Visibility="{Binding IsInputPollOverridden, Converter={StaticResource BoolToVisibility}}">
+                                                        <TextBlock Text="Intervalo de sondeo: personalizado"
+                                                                   FontSize="11"
+                                                                   VerticalAlignment="Center" />
+                                                        <Button Margin="8,0,0,0"
+                                                                Padding="8,2"
+                                                                FontSize="10"
+                                                                Content="Usar ajuste global"
+                                                                Command="{Binding ResetSettingCommand}"
+                                                                CommandParameter="inputPoll" />
+                                                    </StackPanel>
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="Intervalo con el que GDM lee este mando para enviarlo a la salida virtual. Cuanto menor, menor latencia pero mayor consumo."
+                                                               TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,12,0,4"
+                                                               FontSize="12"
+                                                               Text="Intervalo de sondeo" />
+                                                    <ComboBox Width="240"
+                                                              HorizontalAlignment="Left"
+                                                              ItemsSource="{Binding InputPollIntervalOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Value"
+                                                              SelectedValue="{Binding InputPollIntervalSelection, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="«Ajuste global» hereda del preset; «Predeterminado» usa el intervalo de Ajustes de la app. Se aplica en caliente, sin reiniciar la salida."
+                                                               TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Margin="0,14,0,0"
+                                                    Padding="18"
+                                                    Background="{DynamicResource PanelBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8">
+                                                <StackPanel>
+                                                    <TextBlock FontSize="16"
+                                                               FontWeight="SemiBold"
+                                                               Text="Movimiento (DualShock 4)" />
+                                                    <WrapPanel Margin="0,8,0,0">
+                                                        <StackPanel Orientation="Horizontal"
+                                                                    Margin="0,0,10,4"
+                                                                    Visibility="{Binding IsMotionOverridden, Converter={StaticResource BoolToVisibility}}">
+                                                            <TextBlock Text="Movimiento: personalizado"
+                                                                       FontSize="11"
+                                                                       VerticalAlignment="Center" />
+                                                            <Button Margin="8,0,0,0"
+                                                                    Padding="8,2"
+                                                                    FontSize="10"
+                                                                    Content="Usar ajuste global"
+                                                                    Command="{Binding ResetSettingCommand}"
+                                                                    CommandParameter="motion" />
+                                                        </StackPanel>
+                                                        <StackPanel Orientation="Horizontal"
+                                                                    Margin="0,0,10,4"
+                                                                    Visibility="{Binding IsMotionIntervalOverridden, Converter={StaticResource BoolToVisibility}}">
+                                                            <TextBlock Text="Intervalo de movimiento: personalizado"
+                                                                       FontSize="11"
+                                                                       VerticalAlignment="Center" />
+                                                            <Button Margin="8,0,0,0"
+                                                                    Padding="8,2"
+                                                                    FontSize="10"
+                                                                    Content="Usar ajuste global"
+                                                                    Command="{Binding ResetSettingCommand}"
+                                                                    CommandParameter="motionInterval" />
+                                                        </StackPanel>
+                                                    </WrapPanel>
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="Reenvía el acelerómetro y el giróscopo del mando físico al mando virtual. Solo funciona cuando el mando virtual es DualShock 4 y el físico expone sensores (DualShock 4 / DualSense)."
+                                                               TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,12,0,0"
+                                                               FontSize="12"
+                                                               Text="Movimiento" />
+                                                    <ComboBox Width="200"
+                                                              HorizontalAlignment="Left"
+                                                              Margin="0,4,0,0"
+                                                              ItemsSource="{Binding TriStateOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Value"
+                                                              SelectedValue="{Binding MotionState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,14,0,4"
+                                                               FontSize="12"
+                                                               Text="Intervalo de movimiento" />
+                                                    <ComboBox Width="240"
+                                                              HorizontalAlignment="Left"
+                                                              ItemsSource="{Binding MotionPollIntervalOptions}"
+                                                              DisplayMemberPath="Label"
+                                                              SelectedValuePath="Value"
+                                                              SelectedValue="{Binding MotionPollIntervalSelection, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="«Ajuste global» hereda del preset; «Predeterminado» usa el intervalo de sondeo efectivo de este mando. Se aplica en caliente."
                                                                TextWrapping="Wrap" />
                                                     <Button Margin="0,12,0,0"
                                                             HorizontalAlignment="Left"
-                                                            MinWidth="140"
+                                                            MinWidth="170"
                                                             Padding="12,6"
-                                                            Command="{Binding PowerOffCommand}"
+                                                            Command="{Binding CalibrateMotionCommand}"
                                                             CommandParameter="{Binding}"
-                                                            Content="Apagar mando ahora" />
+                                                            Content="Calibrar giróscopo" />
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="{Binding MotionCalibrationText}"
+                                                               TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,4,0,0"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="Pulsa y mantén el mando físico quieto ~1.5 s: se promedia el sesgo del giróscopo y se descuenta al reenviar."
+                                                               TextWrapping="Wrap" />
+                                                    <TextBlock Margin="0,12,0,4"
+                                                               FontSize="12"
+                                                               Text="Inversión de ejes del giróscopo" />
+                                                    <WrapPanel>
+                                                        <CheckBox Margin="0,0,16,0"
+                                                                  VerticalAlignment="Center"
+                                                                  Content="Invertir pitch (arriba/abajo)"
+                                                                  IsChecked="{Binding MotionInvertGyroPitch, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                        <CheckBox Margin="0,0,16,0"
+                                                                  VerticalAlignment="Center"
+                                                                  Content="Invertir yaw (izquierda/derecha)"
+                                                                  IsChecked="{Binding MotionInvertGyroYaw, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                        <CheckBox VerticalAlignment="Center"
+                                                                  Content="Invertir roll"
+                                                                  IsChecked="{Binding MotionInvertGyroRoll, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    </WrapPanel>
+                                                    <TextBlock Margin="0,6,0,0"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryTextBrush}"
+                                                               Text="Si en el juego el giro va al revés, activa la casilla del eje correspondiente. Se aplica en caliente."
+                                                               TextWrapping="Wrap" />
                                                 </StackPanel>
                                             </Border>
-                                        </StackPanel>
+                                                                                    </StackPanel>
                                     </TabItem>
                                 </TabControl>
+                                <StackPanel Margin="0,12,0,0"
+                                            Visibility="{Binding IsGlobalPresetEditor, Converter={StaticResource BoolToVisibility}}">
+                                    <StackPanel DataContext="{Binding DataContext.Profiles.GlobalPresetEditor, RelativeSource={RelativeSource AncestorType=Window}}">
+                                        <TabControl Background="Transparent"
+                                                    BorderThickness="0">
+                                            <TabItem Header="Mando virtual">
+                                                <StackPanel Margin="16,14,16,16">
+                                        <Border Padding="18"
+                                                Background="{DynamicResource PanelBrush}"
+                                                BorderBrush="{DynamicResource BorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                            <StackPanel>
+                                                <TextBlock FontSize="16"
+                                                           FontWeight="SemiBold"
+                                                           Text="Ajuste global" />
+                                                <TextBlock Margin="0,6,0,0"
+                                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                                           Text="Configuración aplicada por defecto a todos los mandos que usan «Ajuste global». Si un mando personaliza una opción, su valor propio tiene prioridad sobre este."
+                                                           TextWrapping="Wrap" />
+                                                <CheckBox Margin="0,12,0,0"
+                                                          VerticalAlignment="Center"
+                                                          Content="Vibración"
+                                                          IsChecked="{Binding VibrationEnabled, Mode=TwoWay}" />
+                                                <CheckBox Margin="0,8,0,0"
+                                                          VerticalAlignment="Center"
+                                                          Content="Inicio automático de la salida virtual al conectar"
+                                                          IsChecked="{Binding AutoStartVirtualGamepad, Mode=TwoWay}" />
+                                                <CheckBox Margin="0,8,0,0"
+                                                          VerticalAlignment="Center"
+                                                          Content="Ocultar el mando físico al iniciar la salida virtual"
+                                                          IsChecked="{Binding AutoHidePhysicalGamepad, Mode=TwoWay}" />
+                                                <CheckBox Margin="0,8,0,0"
+                                                          VerticalAlignment="Center"
+                                                          Content="Mantener el mando oculto al cerrar GDM"
+                                                          IsChecked="{Binding KeepHiddenOnExit, Mode=TwoWay}" />
+                                            </StackPanel>
+                                        </Border>
+                                                </StackPanel>
+                                            </TabItem>
+                                            <TabItem Header="Perfil">
+                                                <StackPanel Margin="16,14,16,16">
+                                                    <Border Padding="18"
+                                                            Background="{DynamicResource PanelBrush}"
+                                                            BorderBrush="{DynamicResource BorderBrush}"
+                                                            BorderThickness="1"
+                                                            CornerRadius="8">
+                                                        <StackPanel>
+                                                            <TextBlock FontSize="16"
+                                                                       FontWeight="SemiBold"
+                                                                       Text="Perfiles" />
+                                                            <TextBlock Margin="0,6,0,0"
+                                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                                       Text="Cada subpestaña es un perfil. «Ajuste global» es el predeterminado de los mandos; el resto son perfiles creados por ti. Los cambios se guardan con el botón Guardar de cada perfil."
+                                                                       TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <TabControl Margin="0,14,0,0"
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                ItemsSource="{Binding DataContext.Profiles.ProfileEditorTabs, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                SelectedItem="{Binding DataContext.Profiles.SelectedProfileTab, Mode=TwoWay, RelativeSource={RelativeSource AncestorType=Window}}">
+                                                        <TabControl.Resources>
+                                                            <Style TargetType="TabItem">
+                                                                <Setter Property="Padding" Value="16,8" />
+                                                                <Setter Property="Margin" Value="0,0,8,0" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
+                                                                <Setter Property="Template">
+                                                                    <Setter.Value>
+                                                                        <ControlTemplate TargetType="TabItem">
+                                                                            <Border x:Name="TabBorder"
+                                                                                    Padding="{TemplateBinding Padding}"
+                                                                                    Background="{DynamicResource PanelBrush}"
+                                                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                                                    BorderThickness="1,1,1,0"
+                                                                                    CornerRadius="6,6,0,0">
+                                                                                <ContentPresenter ContentSource="Header"
+                                                                                                  HorizontalAlignment="Center" />
+                                                                            </Border>
+                                                                            <ControlTemplate.Triggers>
+                                                                                <Trigger Property="IsSelected" Value="True">
+                                                                                    <Setter TargetName="TabBorder"
+                                                                                            Property="Background"
+                                                                                            Value="{DynamicResource PanelRaisedBrush}" />
+                                                                                    <Setter Property="Foreground"
+                                                                                            Value="{DynamicResource PrimaryTextBrush}" />
+                                                                                </Trigger>
+                                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                                    <Setter TargetName="TabBorder"
+                                                                                            Property="BorderBrush"
+                                                                                            Value="{DynamicResource AccentBrush}" />
+                                                                                </Trigger>
+                                                                            </ControlTemplate.Triggers>
+                                                                        </ControlTemplate>
+                                                                    </Setter.Value>
+                                                                </Setter>
+                                                            </Style>
+                                                        </TabControl.Resources>
+                                                        <TabControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <TextBlock FontWeight="SemiBold"
+                                                                           Text="{Binding DisplayName}"
+                                                                           TextWrapping="Wrap" />
+                                                            </DataTemplate>
+                                                        </TabControl.ItemTemplate>
+                                                        <TabControl.ContentTemplate>
+                                                            <DataTemplate>
+                                                                <views:ProfileEditorView DataContext="{Binding DataContext.Profiles, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                                            </DataTemplate>
+                                                        </TabControl.ContentTemplate>
+                                                    </TabControl>
+                                                </StackPanel>
+                                            </TabItem>
+                                            <TabItem Header="Batería">
+                                                <StackPanel Margin="16,14,16,16">
+                                                    <Border Padding="18"
+                                                            Background="{DynamicResource PanelBrush}"
+                                                            BorderBrush="{DynamicResource BorderBrush}"
+                                                            BorderThickness="1"
+                                                            CornerRadius="8">
+                                                        <StackPanel>
+                                                            <TextBlock FontSize="16"
+                                                                       FontWeight="SemiBold"
+                                                                       Text="Alertas de batería" />
+                                                            <CheckBox Margin="0,10,0,0"
+                                                                      VerticalAlignment="Center"
+                                                                      Content="Activar alertas de batería"
+                                                                      IsChecked="{Binding BatteryAlertEnabled, Mode=TwoWay}" />
+                                                            <TextBlock Margin="0,12,0,4"
+                                                                       FontSize="12"
+                                                                       Text="Avisar cuando la batería esté en o por debajo de" />
+                                                            <ComboBox Width="240"
+                                                                      HorizontalAlignment="Left"
+                                                                      ItemsSource="{Binding BatteryAlertLevelOptions}"
+                                                                      DisplayMemberPath="Label"
+                                                                      SelectedValuePath="Level"
+                                                                      SelectedValue="{Binding BatteryAlertLevel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                            <CheckBox Margin="0,12,0,0"
+                                                                      VerticalAlignment="Center"
+                                                                      Content="Notificación en la aplicación"
+                                                                      IsChecked="{Binding BatteryNotifyEnabled, Mode=TwoWay}" />
+                                                            <CheckBox Margin="0,6,0,0"
+                                                                      VerticalAlignment="Center"
+                                                                      Content="Sonido de alerta"
+                                                                      IsChecked="{Binding BatterySoundEnabled, Mode=TwoWay}" />
+                                                            <CheckBox Margin="0,10,0,0"
+                                                                      VerticalAlignment="Center"
+                                                                      Content="Cambiar el color del LED al detectar batería baja"
+                                                                      IsChecked="{Binding BatteryAlertColorEnabled, Mode=TwoWay}" />
+                                                            <StackPanel Orientation="Horizontal"
+                                                                        Margin="0,10,0,0">
+                                                                <Border Width="34"
+                                                                        Height="20"
+                                                                        Margin="0,0,10,0"
+                                                                        VerticalAlignment="Center"
+                                                                        Background="{Binding BatteryAlertColorPreview}"
+                                                                        BorderBrush="{DynamicResource BorderBrush}"
+                                                                        BorderThickness="1"
+                                                                        CornerRadius="3" />
+                                                                <Button Padding="10,3"
+                                                                        Content="Elegir color…"
+                                                                        Command="{Binding PickBatteryColorCommand}" />
+                                                            </StackPanel>
+                                                            <CheckBox Margin="0,10,0,0"
+                                                                      VerticalAlignment="Center"
+                                                                      Content="Aplicar efecto de LED al detectar batería baja"
+                                                                      IsChecked="{Binding BatteryAlertEffectEnabled, Mode=TwoWay}" />
+                                                            <TextBlock Margin="0,12,0,4"
+                                                                       FontSize="12"
+                                                                       Text="Efecto" />
+                                                            <ComboBox Width="240"
+                                                                      HorizontalAlignment="Left"
+                                                                      ItemsSource="{Binding BatteryAlertEffectOptions}"
+                                                                      DisplayMemberPath="Label"
+                                                                      SelectedValuePath="Value"
+                                                                      SelectedValue="{Binding BatteryAlertEffect, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                            <TextBlock Margin="0,12,0,4"
+                                                                       FontSize="12"
+                                                                       Text="Efecto al cargar" />
+                                                            <ComboBox Width="240"
+                                                                      HorizontalAlignment="Left"
+                                                                      ItemsSource="{Binding ChargingLedEffectOptions}"
+                                                                      DisplayMemberPath="Label"
+                                                                      SelectedValuePath="Value"
+                                                                      SelectedValue="{Binding ChargingLedEffect, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                            <CheckBox Margin="0,10,0,0"
+                                                                      VerticalAlignment="Center"
+                                                                      Content="Aplicar los efectos modulando el color en vez del brillo (para mandos sin control de brillo, como DS4 genéricos)"
+                                                                      IsChecked="{Binding LedEffectColorIntensity, Mode=TwoWay}" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Margin="0,14,0,0"
+                                                            Padding="18"
+                                                            Background="{DynamicResource PanelBrush}"
+                                                            BorderBrush="{DynamicResource BorderBrush}"
+                                                            BorderThickness="1"
+                                                            CornerRadius="8">
+                                                        <StackPanel>
+                                                            <TextBlock FontSize="16"
+                                                                       FontWeight="SemiBold"
+                                                                       Text="Apagado por inactividad" />
+                                                            <TextBlock Margin="0,6,0,0"
+                                                                       FontSize="12"
+                                                                       Text="Apagar tras inactividad" />
+                                                            <ComboBox Width="200"
+                                                                      HorizontalAlignment="Left"
+                                                                      Margin="0,4,0,0"
+                                                                      ItemsSource="{Binding PowerOffIdleOptions}"
+                                                                      DisplayMemberPath="Label"
+                                                                      SelectedValuePath="Seconds"
+                                                                      SelectedValue="{Binding PowerOffIdleSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                            <TextBlock Margin="0,6,0,0"
+                                                                       FontSize="11"
+                                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                                       Text="El temporizador se reinicia con cualquier cambio en los controles del mando."
+                                                                       TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </StackPanel>
+                                            </TabItem>
+                                            <TabItem Header="Otros">
+                                                <StackPanel Margin="16,14,16,16">
+                                        <Border Margin="0,14,0,0"
+                                                Padding="18"
+                                                Background="{DynamicResource PanelBrush}"
+                                                BorderBrush="{DynamicResource BorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                            <StackPanel>
+                                                <TextBlock FontSize="16"
+                                                           FontWeight="SemiBold"
+                                                           Text="LED del mando" />
+                                                <TextBlock Margin="0,6,0,0"
+                                                           FontSize="12"
+                                                           Text="Modo de color" />
+                                                <ComboBox Width="280"
+                                                          HorizontalAlignment="Left"
+                                                          Margin="0,4,0,0"
+                                                          ItemsSource="{Binding LedModeOptions}"
+                                                          DisplayMemberPath="Label"
+                                                          SelectedValuePath="Value"
+                                                          SelectedValue="{Binding LedMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                <StackPanel Margin="0,12,0,0">
+                                                    <StackPanel.Style>
+                                                        <Style TargetType="StackPanel">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding LedMode}" Value="player">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </StackPanel.Style>
+                                                    <TextBlock FontSize="12" Text="Número de jugador" />
+                                                    <ComboBox Width="120"
+                                                              HorizontalAlignment="Left"
+                                                              Margin="0,4,0,10"
+                                                              ItemsSource="{Binding LedPlayerNumberOptions}"
+                                                              SelectedItem="{Binding LedPlayerNumber, Mode=TwoWay}" />
+                                                    <ItemsControl ItemsSource="{Binding LedPlayerColorSlots}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <StackPanel Orientation="Horizontal"
+                                                                            Margin="0,0,0,6">
+                                                                    <TextBlock Width="90"
+                                                                               VerticalAlignment="Center"
+                                                                               Text="{Binding Label}" />
+                                                                    <Border Width="34"
+                                                                            Height="20"
+                                                                            Margin="0,0,10,0"
+                                                                            VerticalAlignment="Center"
+                                                                            Background="{Binding Preview}"
+                                                                            BorderBrush="{DynamicResource BorderBrush}"
+                                                                            BorderThickness="1"
+                                                                            CornerRadius="3" />
+                                                                    <Button Padding="10,3"
+                                                                            Content="Elegir…"
+                                                                            Command="{Binding PickCommand}" />
+                                                                </StackPanel>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                                <StackPanel Margin="0,4,0,0">
+                                                    <StackPanel.Style>
+                                                        <Style TargetType="StackPanel">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding LedMode}" Value="manual">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </StackPanel.Style>
+                                                    <TextBlock FontSize="12" Text="Color" />
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Margin="0,4,0,10">
+                                                        <Border Width="34"
+                                                                Height="20"
+                                                                Margin="0,0,10,0"
+                                                                VerticalAlignment="Center"
+                                                                Background="{Binding LedManualColorPreview}"
+                                                                BorderBrush="{DynamicResource BorderBrush}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="3" />
+                                                        <Button Padding="10,3"
+                                                                Content="Elegir color…"
+                                                                Command="{Binding PickLedManualColorCommand}" />
+                                                    </StackPanel>
+                                                    <TextBlock FontSize="12" Text="Brillo" />
+                                                    <Slider Width="280"
+                                                            HorizontalAlignment="Left"
+                                                            Minimum="0"
+                                                            Maximum="255"
+                                                            Value="{Binding LedBrightness, Mode=TwoWay}" />
+                                                </StackPanel>
+                                                <CheckBox Margin="0,12,0,0"
+                                                          Content="Ignorar señales de color externas: mantener el color configurado"
+                                                          IsChecked="{Binding IgnoreExternalColorSignals, Mode=TwoWay}" />
+                                                <CheckBox Margin="0,10,0,0"
+                                                          Content="Reiniciar el mando físico al iniciar la salida virtual"
+                                                          IsChecked="{Binding RestartPhysicalDeviceOnVirtualStart, Mode=TwoWay}" />
+                                                <TextBlock Margin="0,4,0,0"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                                           Text="Deshabilita y rehabilita el dispositivo para cerrar identificadores abiertos por juegos que sigan viendo el mando oculto. Solo para casos concretos; el mando se desconecta brevemente."
+                                                           TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Margin="0,14,0,0"
+                                                Padding="18"
+                                                Background="{DynamicResource PanelBrush}"
+                                                BorderBrush="{DynamicResource BorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                            <StackPanel>
+                                                <TextBlock FontSize="16"
+                                                           FontWeight="SemiBold"
+                                                           Text="Sondeo de entrada" />
+                                                <TextBlock Margin="0,6,0,0"
+                                                           FontSize="12"
+                                                           Text="Intervalo de sondeo" />
+                                                <ComboBox Width="240"
+                                                          HorizontalAlignment="Left"
+                                                          Margin="0,4,0,0"
+                                                          ItemsSource="{Binding InputPollIntervalOptions}"
+                                                          DisplayMemberPath="Label"
+                                                          SelectedValuePath="Value"
+                                                          SelectedValue="{Binding InputPollIntervalMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Margin="0,14,0,0"
+                                                Padding="18"
+                                                Background="{DynamicResource PanelBrush}"
+                                                BorderBrush="{DynamicResource BorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                            <StackPanel>
+                                                <TextBlock FontSize="16"
+                                                           FontWeight="SemiBold"
+                                                           Text="Movimiento" />
+                                                <CheckBox Margin="0,10,0,0"
+                                                          VerticalAlignment="Center"
+                                                          Content="Reenviar acelerómetro y giróscopo al mando virtual"
+                                                          IsChecked="{Binding MotionEnabled, Mode=TwoWay}" />
+                                                <TextBlock Margin="0,12,0,4"
+                                                           FontSize="12"
+                                                           Text="Intervalo de movimiento" />
+                                                <ComboBox Width="240"
+                                                          HorizontalAlignment="Left"
+                                                          ItemsSource="{Binding MotionPollIntervalOptions}"
+                                                          DisplayMemberPath="Label"
+                                                          SelectedValuePath="Value"
+                                                          SelectedValue="{Binding MotionPollIntervalMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Margin="0,14,0,0"
+                                                Padding="18"
+                                                Background="{DynamicResource PanelBrush}"
+                                                BorderBrush="{DynamicResource BorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                            <StackPanel>
+                                                <TextBlock FontSize="16"
+                                                           FontWeight="SemiBold"
+                                                           Text="Mandos no guardados" />
+                                                <TextBlock Margin="0,6,0,0"
+                                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                                           Text="Qué hacer cuando se conecta un mando físico que no tiene ajustes guardados. Nunca se aplica a mandos virtuales."
+                                                           TextWrapping="Wrap" />
+                                                <ComboBox Width="280"
+                                                          HorizontalAlignment="Left"
+                                                          Margin="0,10,0,0"
+                                                          ItemsSource="{Binding UnsavedDevicesOptions}"
+                                                          DisplayMemberPath="Label"
+                                                          SelectedValuePath="Value"
+                                                          SelectedValue="{Binding UnsavedDevicesMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </Border>
+                                                </StackPanel>
+                                            </TabItem>
+                                        </TabControl>
+                                        <StackPanel Margin="0,14,0,0"
+                                                    Orientation="Horizontal">
+                                            <Button MinWidth="120"
+                                                    Padding="14,8"
+                                                    Command="{Binding SaveCommand}"
+                                                    Content="Guardar ajuste global" />
+                                            <TextBlock Margin="12,0,0,0"
+                                                       VerticalAlignment="Center"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Text="Los cambios se aplican a los mandos que usan «Ajuste global»."
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                                </Grid>
                             </DataTemplate>
                         </TabControl.ContentTemplate>
                     </TabControl>
-                    <Border Margin="0,16,0,0"
-                            Padding="18"
-                            Background="{DynamicResource PanelBrush}"
-                            BorderBrush="{DynamicResource BorderBrush}"
-                            BorderThickness="1"
-                            CornerRadius="8"
-                            Visibility="{Binding Profiles.ShowNoVirtualGamepads, Converter={StaticResource BoolToVisibility}}">
-                        <StackPanel>
-                            <TextBlock FontSize="18"
-                                       FontWeight="SemiBold"
-                                       Text="Sin mandos guardados" />
-                            <TextBlock Margin="0,5,0,12"
-                                       Foreground="{DynamicResource SecondaryTextBrush}"
-                                       Text="Guarda mandos desde la pestaña Mandos para aparecer como subpestañas aquí. Mientras tanto puedes crear y editar perfiles."
-                                       TextWrapping="Wrap" />
-                            <views:ProfileEditorView DataContext="{Binding Profiles, RelativeSource={RelativeSource AncestorType=Window}}" />
-                        </StackPanel>
-                    </Border>
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>

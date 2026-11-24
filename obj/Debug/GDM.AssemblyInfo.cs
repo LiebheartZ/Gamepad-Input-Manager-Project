@@ -12,11 +12,11 @@ using System.Reflection;
 
 [assembly: System.Reflection.AssemblyCompanyAttribute("GDM")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
-[assembly: System.Reflection.AssemblyFileVersionAttribute("0.16.22.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.16.22+3602b2df20414b1d8d5284dd5a442a29eeafc8da")]
+[assembly: System.Reflection.AssemblyFileVersionAttribute("0.1.7.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.1.7+8c2564a1ae940f227d92f3428044f52af6ec628e")]
 [assembly: System.Reflection.AssemblyProductAttribute("GDM")]
 [assembly: System.Reflection.AssemblyTitleAttribute("GDM")]
-[assembly: System.Reflection.AssemblyVersionAttribute("0.16.22.0")]
+[assembly: System.Reflection.AssemblyVersionAttribute("0.1.7.0")]
 [assembly: System.Runtime.Versioning.TargetPlatformAttribute("Windows7.0")]
 [assembly: System.Runtime.Versioning.SupportedOSPlatformAttribute("Windows7.0")]
 

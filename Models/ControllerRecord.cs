@@ -2,19 +2,47 @@ namespace GDM.Models;
 
 public sealed record ControllerRecord
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
     public Guid ControllerId { get; init; }
     public string DisplayName { get; init; } = string.Empty;
     public ControllerIdentity Identity { get; init; } = new();
     public Guid? ProfileId { get; init; }
+    public ControllerProfile? DeviceProfile { get; init; }
     public Dictionary<string, string> ButtonMappingOverrides { get; init; } = [];
     public Dictionary<string, string> AxisMappingOverrides { get; init; } = [];
     public Dictionary<string, double> DeadZoneOverrides { get; init; } = [];
     public ControllerSettings Settings { get; init; } = new();
+    public DeviceSettingOverrides SettingOverrides { get; init; } = new();
     public DateTimeOffset CreatedAtUtc { get; init; }
     public DateTimeOffset UpdatedAtUtc { get; init; }
+}
+
+public sealed record DeviceSettingOverrides
+{
+    public bool? VibrationEnabled { get; init; }
+    public bool? AutoStartVirtualGamepad { get; init; }
+    public bool? AutoHidePhysicalGamepad { get; init; }
+    public bool? KeepHiddenOnExit { get; init; }
+    public ControllerLedSettings? Led { get; init; }
+    public int? PowerOffIdleSeconds { get; init; }
+    public int? InputPollIntervalMs { get; init; }
+    public bool? MotionEnabled { get; init; }
+    public int? MotionPollIntervalMs { get; init; }
+    public bool? BatteryAlertEnabled { get; init; }
+    public int? BatteryAlertLevel { get; init; }
+    public bool? BatteryAlertColorEnabled { get; init; }
+    public string? BatteryAlertColor { get; init; }
+    public bool? BatteryAlertEffectEnabled { get; init; }
+    public string? BatteryAlertEffect { get; init; }
+    public bool? BatteryNotifyEnabled { get; init; }
+    public bool? BatterySoundEnabled { get; init; }
+    public string? ChargingLedEffect { get; init; }
+    public bool? LedEffectColorIntensity { get; init; }
+    public bool? IgnoreExternalColorSignals { get; init; }
+    public string? VirtualGamepadType { get; init; }
+    public bool? RestartPhysicalDeviceOnVirtualStart { get; init; }
 }
 
 public sealed record ControllerIdentity
@@ -34,6 +62,62 @@ public sealed record ControllerSettings
     public bool KeepHiddenOnExit { get; init; }
     public ControllerLedSettings Led { get; init; } = ControllerLedSettings.Default;
     public int PowerOffIdleSeconds { get; init; }
+    public int InputPollIntervalMs { get; init; }
+    public bool MotionEnabled { get; init; } = true;
+    public int MotionPollIntervalMs { get; init; }
+    public bool MotionCalibrated { get; init; }
+    public double MotionGyroBiasPitchRadS { get; init; }
+    public double MotionGyroBiasYawRadS { get; init; }
+    public double MotionGyroBiasRollRadS { get; init; }
+    public bool MotionInvertGyroPitch { get; init; }
+    public bool MotionInvertGyroYaw { get; init; }
+    public bool MotionInvertGyroRoll { get; init; }
+    public bool BatteryAlertEnabled { get; init; }
+    public int BatteryAlertLevel { get; init; } = (int)GamepadBatteryLevel.Low;
+    public bool BatteryAlertColorEnabled { get; init; }
+    public string BatteryAlertColor { get; init; } = "FF453A";
+    public bool BatteryAlertEffectEnabled { get; init; }
+    public string BatteryAlertEffect { get; init; } = BatteryAlertEffects.Blink;
+    public bool BatteryNotifyEnabled { get; init; } = true;
+    public bool BatterySoundEnabled { get; init; }
+    public string ChargingLedEffect { get; init; } = ChargingLedEffects.None;
+    public bool LedEffectColorIntensity { get; init; }
+    public bool IgnoreExternalColorSignals { get; init; }
+    public bool RestartPhysicalDeviceOnVirtualStart { get; init; }
+}
+
+public static class BatteryAlertLevels
+{
+    public const int MinLevel = (int)GamepadBatteryLevel.Empty;
+    public const int MaxLevel = (int)GamepadBatteryLevel.Medium;
+
+    public static int Normalize(int level) => Math.Clamp(level, MinLevel, MaxLevel);
+}
+
+public static class BatteryAlertEffects
+{
+    public const string Blink = "blink";
+    public const string Fade = "fade";
+
+    public static bool IsSupported(string? value) => value is Blink or Fade;
+
+    public static string Normalize(string? value) => value is Fade ? Fade : Blink;
+}
+
+public static class ChargingLedEffects
+{
+    public const string None = "none";
+    public const string Blink = "blink";
+    public const string Fade = "fade";
+
+    public static bool IsSupported(string? value) => value is None or Blink or Fade;
+
+    public static string Normalize(string? value) => value switch
+    {
+        Blink => Blink,
+        Fade => Fade,
+        _ => None
+    };
 }
 
 public static class ControllerPowerOff

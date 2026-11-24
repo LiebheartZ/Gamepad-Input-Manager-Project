@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -18,12 +18,16 @@ public sealed class TesterViewModel : INotifyPropertyChanged
     private readonly AsyncCommand _selectDeviceCommand;
     private readonly AsyncCommand _startVirtualGamepadCommand;
     private readonly AsyncCommand _stopVirtualGamepadCommand;
+    private readonly AsyncCommand _rumbleWeakCommand;
+    private readonly AsyncCommand _rumbleStrongCommand;
+    private readonly AsyncCommand _rumbleStopCommand;
     private ConnectedGamepad? _selectedDevice;
     private GamepadInputSnapshot? _inputSnapshot;
     private string _inputStatus = "Selecciona un mando conectado para leer sus entradas.";
     private string _virtualGamepadStatus = "La salida virtual está detenida.";
     private string? _lastErrorDeviceKey;
     private bool _isReading;
+    private bool _motionTestActive;
     private bool _isStartingVirtualGamepad;
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -32,6 +36,9 @@ public sealed class TesterViewModel : INotifyPropertyChanged
     public ICommand SelectDeviceCommand => _selectDeviceCommand;
     public ICommand StartVirtualGamepadCommand => _startVirtualGamepadCommand;
     public ICommand StopVirtualGamepadCommand => _stopVirtualGamepadCommand;
+    public ICommand RumbleWeakCommand => _rumbleWeakCommand;
+    public ICommand RumbleStrongCommand => _rumbleStrongCommand;
+    public ICommand RumbleStopCommand => _rumbleStopCommand;
     public ConnectedGamepad? SelectedDevice
     {
         get => _selectedDevice;
@@ -54,6 +61,9 @@ public sealed class TesterViewModel : INotifyPropertyChanged
                 _selectDeviceCommand.NotifyCanExecuteChanged();
                 _startVirtualGamepadCommand.NotifyCanExecuteChanged();
                 _stopVirtualGamepadCommand.NotifyCanExecuteChanged();
+                _rumbleWeakCommand.NotifyCanExecuteChanged();
+                _rumbleStrongCommand.NotifyCanExecuteChanged();
+                _rumbleStopCommand.NotifyCanExecuteChanged();
             }
         }
     }
@@ -108,6 +118,20 @@ public sealed class TesterViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(IsDpadRightPressed));
                 OnPropertyChanged(nameof(IsLeftShoulderPressed));
                 OnPropertyChanged(nameof(IsRightShoulderPressed));
+                OnPropertyChanged(nameof(MotionSensorsText));
+                OnPropertyChanged(nameof(HasMotionData));
+                OnPropertyChanged(nameof(MotionAccelText));
+                OnPropertyChanged(nameof(MotionGyroText));
+                OnPropertyChanged(nameof(MotionDotLeft));
+                OnPropertyChanged(nameof(MotionDotTop));
+                OnPropertyChanged(nameof(HasTouchpadSurface));
+                OnPropertyChanged(nameof(TouchpadText));
+                OnPropertyChanged(nameof(TouchpadFinger0Visible));
+                OnPropertyChanged(nameof(TouchpadFinger0Left));
+                OnPropertyChanged(nameof(TouchpadFinger0Top));
+                OnPropertyChanged(nameof(TouchpadFinger1Visible));
+                OnPropertyChanged(nameof(TouchpadFinger1Left));
+                OnPropertyChanged(nameof(TouchpadFinger1Top));
             }
         }
     }
@@ -122,6 +146,23 @@ public sealed class TesterViewModel : INotifyPropertyChanged
     {
         get => _virtualGamepadStatus;
         private set => SetProperty(ref _virtualGamepadStatus, value);
+    }
+
+    public bool MotionTestActive
+    {
+        get => _motionTestActive;
+        set
+        {
+            if (SetProperty(ref _motionTestActive, value))
+            {
+                OnPropertyChanged(nameof(MotionSensorsText));
+                OnPropertyChanged(nameof(HasMotionData));
+                OnPropertyChanged(nameof(MotionAccelText));
+                OnPropertyChanged(nameof(MotionGyroText));
+                OnPropertyChanged(nameof(MotionDotLeft));
+                OnPropertyChanged(nameof(MotionDotTop));
+            }
+        }
     }
 
     public bool IsVirtualGamepadRunning => _virtualGamepadService?.IsRunning == true;
@@ -191,6 +232,151 @@ public sealed class TesterViewModel : INotifyPropertyChanged
     public bool IsRightShoulderPressed =>
         IsButtonPressed("Hombro der. (R1)") || IsButtonPressed("Hombro der.");
 
+    private MotionSensorData? MotionData =>
+        _motionTestActive ? InputSnapshot?.Motion : null;
+
+    public bool HasMotionData =>
+        MotionData is { } motion && (motion.HasAccelerometer || motion.HasGyroscope);
+
+    public string MotionSensorsText
+    {
+        get
+        {
+            if (!_motionTestActive)
+            {
+                return "Movimiento en pausa: la prueba solo se actualiza con la ventana visible en la pestaña Tester.";
+            }
+
+            return MotionData switch
+            {
+                null => "Este mando no expone acelerómetro ni giróscopo (típico de Xbox o mandos sin IMU).",
+                { HasAccelerometer: true, HasGyroscope: true } =>
+                    $"Sensores: acelerómetro {(MotionData!.AccelerometerEnabled ? "ok" : "SIN FLUJO")}, giróscopo {(MotionData!.GyroscopeEnabled ? "ok" : "SIN FLUJO")}.",
+                { HasAccelerometer: true } =>
+                    $"Sensor: acelerómetro {(MotionData!.AccelerometerEnabled ? "ok" : "SIN FLUJO")}.",
+                { HasGyroscope: true } =>
+                    $"Sensor: giróscopo {(MotionData!.GyroscopeEnabled ? "ok" : "SIN FLUJO")}.",
+                _ => "Los sensores no devuelven datos."
+            };
+        }
+    }
+
+    public string MotionAccelText
+    {
+        get
+        {
+            MotionSensorData? motion = MotionData;
+            return motion?.HasAccelerometer == true
+                ? $"Acelerómetro (m/s²): X {motion.AccelXMs2,6:F2}  Y {motion.AccelYMs2,6:F2}  Z {motion.AccelZMs2,6:F2}"
+                : string.Empty;
+        }
+    }
+
+    public string MotionGyroText
+    {
+        get
+        {
+            MotionSensorData? motion = MotionData;
+            if (motion?.HasGyroscope != true)
+            {
+                return string.Empty;
+            }
+
+            const double radToDeg = 57.29577951308232;
+            return $"Giróscopo (°/s): pitch {motion.GyroPitchRadS * radToDeg,7:F1}  yaw {motion.GyroYawRadS * radToDeg,7:F1}  roll {motion.GyroRollRadS * radToDeg,7:F1}";
+        }
+    }
+
+    public double MotionDotLeft
+    {
+        get
+        {
+            MotionSensorData? motion = MotionData;
+            if (motion?.HasAccelerometer != true)
+            {
+                return 60d;
+            }
+
+            double x = Math.Clamp(motion.AccelXMs2 / 9.80665, -1d, 1d);
+            return 60d + x * 42d;
+        }
+    }
+
+    public double MotionDotTop
+    {
+        get
+        {
+            MotionSensorData? motion = MotionData;
+            if (motion?.HasAccelerometer != true)
+            {
+                return 60d;
+            }
+
+            double z = Math.Clamp(motion.AccelZMs2 / 9.80665, -1d, 1d);
+            return 60d - z * 42d;
+        }
+    }
+
+    public bool HasTouchpadSurface => InputSnapshot is not null;
+
+    public string TouchpadText
+    {
+        get
+        {
+            TouchpadState? touchpad = InputSnapshot?.Touchpad;
+            if (touchpad is not { HasTouchpad: true })
+            {
+                return "Táctil: sin superficie detectada.";
+            }
+
+            TouchpadFingerState? finger = touchpad.Finger0 ?? touchpad.Finger1;
+            string text = finger is null
+                ? "Táctil: superficie detectada, sin contacto."
+                : $"Táctil: x {finger.X,5:F3}  y {finger.Y,5:F3}  presión {finger.Pressure,5:F2}";
+            return touchpad.Diagnostics is { Length: > 0 } diag
+                ? $"{text}  [{diag}]"
+                : text;
+        }
+    }
+
+    public bool TouchpadFinger0Visible =>
+        InputSnapshot?.Touchpad?.Finger0?.Active == true;
+
+    public double TouchpadFinger0Left =>
+        TouchDotLeft(InputSnapshot?.Touchpad?.Finger0);
+
+    public double TouchpadFinger0Top =>
+        TouchDotTop(InputSnapshot?.Touchpad?.Finger0);
+
+    public bool TouchpadFinger1Visible =>
+        InputSnapshot?.Touchpad?.Finger1?.Active == true;
+
+    public double TouchpadFinger1Left =>
+        TouchDotLeft(InputSnapshot?.Touchpad?.Finger1);
+
+    public double TouchpadFinger1Top =>
+        TouchDotTop(InputSnapshot?.Touchpad?.Finger1);
+
+    private static double TouchDotLeft(TouchpadFingerState? finger)
+    {
+        if (finger is null)
+        {
+            return 184d;
+        }
+
+        return 186d + Math.Clamp(finger.X, 0d, 1d) * 80d;
+    }
+
+    private static double TouchDotTop(TouchpadFingerState? finger)
+    {
+        if (finger is null)
+        {
+            return 74d;
+        }
+
+        return 56d + Math.Clamp(finger.Y, 0d, 1d) * 36d;
+    }
+
     public TesterViewModel(
         IGamepadInputService? inputService,
         Action<string>? logInputError = null,
@@ -226,6 +412,35 @@ public sealed class TesterViewModel : INotifyPropertyChanged
         _stopVirtualGamepadCommand = new AsyncCommand(
             _ => StopVirtualGamepadAsync(),
             _ => CanStopVirtualGamepad);
+        _rumbleWeakCommand = new AsyncCommand(
+            _ => RumbleTestAsync(16384, 8192, 600),
+            _ => CanTestRumble);
+        _rumbleStrongCommand = new AsyncCommand(
+            _ => RumbleTestAsync(65535, 65535, 900),
+            _ => CanTestRumble);
+        _rumbleStopCommand = new AsyncCommand(
+            _ => RumbleTestAsync(0, 0, 60),
+            _ => CanTestRumble);
+    }
+
+    private bool CanTestRumble =>
+        SelectedDevice is { IsVirtualGamepad: not true } && _inputService is not null;
+
+    private async Task RumbleTestAsync(int lowMotor, int highMotor, int durationMs)
+    {
+        if (SelectedDevice is not { } device || _inputService is null)
+        {
+            return;
+        }
+
+        bool sent = await _inputService.RumbleAsync(
+            device.DeviceKey, lowMotor, highMotor, durationMs);
+        _logInputError?.Invoke(
+            "Prueba de vibración -> " + device.Name + ": " +
+            (sent ? "enviada" : "no admitida por SDL") + " (" + durationMs + " ms).");
+        InputStatus = sent
+            ? $"Vibración enviada al mando ({durationMs} ms)."
+            : "Este mando no admite vibración por SDL (sin control XInput/HID con rumble).";
     }
 
     public void UpdateDevices(IReadOnlyList<ConnectedGamepad> devices)
@@ -260,9 +475,17 @@ public sealed class TesterViewModel : INotifyPropertyChanged
         _isReading = true;
         try
         {
-            GamepadInputSnapshot? snapshot = await _inputService.ReadInputAsync(
-                device.DeviceKey,
-                cancellationToken);
+            GamepadInputSnapshot? snapshot = device.IsVirtualGamepad
+                ? _virtualGamepadService?.TryGetVirtualOutputSnapshot(device)
+                : await _inputService.ReadInputAsync(
+                    device.DeviceKey,
+                    cancellationToken);
+            if (snapshot is null && device.IsVirtualGamepad)
+            {
+                snapshot = await _inputService.ReadInputAsync(
+                    device.DeviceKey,
+                    cancellationToken);
+            }
             if (SelectedDevice?.DeviceKey != device.DeviceKey)
             {
                 return;
@@ -278,9 +501,11 @@ public sealed class TesterViewModel : INotifyPropertyChanged
             }
 
             InputSnapshot = snapshot;
-            InputStatus = snapshot.IsStandardGameController
-                ? "SDL reconoce este mando y normaliza sus controles."
-                : "SDL no tiene un mapeo estándar para este mando. Se muestran ejes y botones físicos sin asignar nombres convencionales.";
+            InputStatus = device.IsVirtualGamepad
+                ? "Estado que GDM está enviando al mando virtual."
+                : snapshot.IsStandardGameController
+                    ? "SDL reconoce este mando y normaliza sus controles."
+                    : "SDL no tiene un mapeo estándar para este mando. Se muestran ejes y botones físicos sin asignar nombres convencionales.";
             _lastErrorDeviceKey = null;
             if (_virtualGamepadService?.IsRunning == true)
             {
@@ -363,8 +588,11 @@ public sealed class TesterViewModel : INotifyPropertyChanged
                 return;
             }
 
-            string virtualGamepadType = VirtualGamepadTypes.Normalize(
-                _defaultVirtualGamepadType?.Invoke());
+            string? configuredType = _defaultVirtualGamepadType?.Invoke();
+            string virtualGamepadType = VirtualGamepadTypes.IsAuto(configuredType)
+                ? VirtualGamepadTypes.InferFromConnectedGamepad(device) ??
+                    VirtualGamepadTypes.Xbox360
+                : VirtualGamepadTypes.Normalize(configuredType);
             await _virtualGamepadService.StartAsync(device, virtualGamepadType);
             UpdateVirtualGamepadState(
                 $"Mando virtual {VirtualGamepadTypes.DisplayName(virtualGamepadType)} activo. El mando físico sigue conectado.");
@@ -508,6 +736,9 @@ public sealed class TesterViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanStopVirtualGamepad));
         _startVirtualGamepadCommand.NotifyCanExecuteChanged();
         _stopVirtualGamepadCommand.NotifyCanExecuteChanged();
+        _rumbleWeakCommand.NotifyCanExecuteChanged();
+        _rumbleStrongCommand.NotifyCanExecuteChanged();
+        _rumbleStopCommand.NotifyCanExecuteChanged();
         _selectDeviceCommand.NotifyCanExecuteChanged();
     }
 

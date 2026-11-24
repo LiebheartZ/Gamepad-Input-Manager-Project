@@ -27,6 +27,7 @@ public partial class App : System.Windows.Application
     private SingleInstanceCoordinator? _singleInstanceCoordinator;
     private bool _activationPending;
     private GDM.ViewModels.SettingsViewModel? _settingsViewModel;
+    private Services.Abstractions.IVirtualGamepadService? _virtualGamepadService;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -154,6 +155,7 @@ public partial class App : System.Windows.Application
         var gamepadDetectionService = new Sdl2GamepadDetectionService();
         var controllerRepository = new JsonControllerRepository(StoragePaths);
         var profileRepository = new JsonProfileRepository(StoragePaths);
+        var globalPresetRepository = new JsonGlobalPresetRepository(StoragePaths);
         ConnectedGamepad? startupVirtualGamepad = ParseStartupVirtualGamepad(
             e.Args,
             logService);
@@ -226,6 +228,17 @@ public partial class App : System.Windows.Application
         var virtualGamepadService = new HidMaestroVirtualGamepadService(
             gamepadDetectionService,
             () => Settings.Xbox360ProfileVariant);
+        _virtualGamepadService = virtualGamepadService;
+        _ = Task.Run(() =>
+        {
+            bool cleaned = virtualGamepadService.CleanupOrphanedVirtualControllers();
+            LogService?.Write(
+                cleaned ? DiagnosticLogLevel.Information : DiagnosticLogLevel.Warning,
+                "HIDMaestro",
+                cleaned
+                    ? "Limpieza de mandos virtuales huérfanos completada."
+                    : "No se pudieron eliminar los mandos virtuales huérfanos (¿sin permisos de administrador?).");
+        });
         var window = new MainWindow(
             Settings,
             gamepadDetectionService,
@@ -238,8 +251,8 @@ public partial class App : System.Windows.Application
             hidHideService,
             e.Args.Contains("--minimized", StringComparer.OrdinalIgnoreCase),
             () => Settings.DefaultVirtualGamepadType,
-            () => Settings.RestoreGamepadsOnExit,
-            () => Settings.DefaultProfileId);
+            () => Settings.DefaultProfileId,
+            globalPresetRepository);
         window.Closing += HandleWindowClosing;
         MainWindow = window;
         window.Show();
@@ -252,6 +265,7 @@ public partial class App : System.Windows.Application
     protected override void OnExit(ExitEventArgs e)
     {
         _singleInstanceCoordinator?.Dispose();
+        _virtualGamepadService?.Dispose();
         _singleInstanceCoordinator = null;
         base.OnExit(e);
     }
@@ -494,6 +508,27 @@ public partial class App : System.Windows.Application
 
             if (!window.IsElevatedRelaunch)
             {
+                try
+                {
+                    if (_virtualGamepadService is not null)
+                    {
+                        Task stopOutputsTask = _virtualGamepadService.StopAllAsync();
+                        await Task.WhenAny(stopOutputsTask, Task.Delay(TimeSpan.FromSeconds(8)));
+                    }
+                }
+                catch (Exception exception) when (
+                    exception is IOException or
+                    InvalidOperationException or
+                    Win32Exception or
+                    ObjectDisposedException)
+                {
+                    LogService?.Write(
+                        DiagnosticLogLevel.Warning,
+                        "Salida virtual",
+                        "No se pudieron detener todas las salidas virtuales antes de cerrar.",
+                        exception);
+                }
+
                 try
                 {
                     await window.RestoreHidHideBeforeCloseAsync();
