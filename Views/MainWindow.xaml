@@ -1203,6 +1203,31 @@
                                           DisplayMemberPath="Label"
                                           SelectedValuePath="Value"
                                           SelectedValue="{Binding Settings.SelectedTheme, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="0,18,0,5"
+                                           FontSize="12"
+                                           Text="Notificaciones de Windows" />
+                                <ComboBox Width="260"
+                                          HorizontalAlignment="Left"
+                                          ItemsSource="{Binding Settings.NotificationModeOptions}"
+                                          DisplayMemberPath="Label"
+                                          SelectedValuePath="Value"
+                                          SelectedValue="{Binding Settings.NotificationMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="0,6,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="Avisos toast de Windows al conectar o desconectar mandos, iniciar o detener la salida virtual y otros eventos. «Solo con GDM visible» muestra los avisos únicamente cuando la ventana de GDM está visible."
+                                           TextWrapping="Wrap" />
+                                <TextBlock Margin="0,14,0,5"
+                                           FontSize="12"
+                                           Text="Intervalo entre notificaciones (segundos)" />
+                                <TextBox Width="100"
+                                         HorizontalAlignment="Left"
+                                         Text="{Binding Settings.NotificationQueueIntervalSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="0,6,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="Si varios eventos coinciden, las notificaciones se muestran en cola, una cada tantos segundos (1–60, por defecto 3)."
+                                           TextWrapping="Wrap" />
                                 <TextBlock Margin="0,18,0,0"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
                                            Text="El idioma disponible actualmente es Español."
@@ -2339,6 +2364,56 @@
                                                           VerticalAlignment="Center"
                                                           Content="Mantener el mando oculto al cerrar GDM"
                                                           IsChecked="{Binding KeepHiddenOnExit, Mode=TwoWay}" />
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Margin="0,14,0,0"
+                                                Padding="18"
+                                                Background="{DynamicResource PanelBrush}"
+                                                BorderBrush="{DynamicResource BorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="8">
+                                            <StackPanel>
+                                                <TextBlock FontSize="16"
+                                                           FontWeight="SemiBold"
+                                                           Text="Guardar mandos nuevos" />
+                                                <TextBlock Margin="0,6,0,0"
+                                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                                           Text="Cuando se conecta un mando físico que GDM no tiene guardado, mantener pulsada la combinación durante el tiempo indicado lo registra como si pulsaras «Guardar». Solo se aplica a mandos no guardados."
+                                                           TextWrapping="Wrap" />
+                                                <CheckBox Margin="0,12,0,0"
+                                                          VerticalAlignment="Center"
+                                                          Content="Activar combinación para guardar"
+                                                          IsChecked="{Binding SaveComboEnabled, Mode=TwoWay}" />
+                                                <StackPanel Margin="24,10,0,0"
+                                                            IsEnabled="{Binding SaveComboEnabled}">
+                                                    <TextBlock FontSize="12"
+                                                               Text="Botones (mantener los dos a la vez)" />
+                                                    <StackPanel Margin="0,6,0,0"
+                                                                Orientation="Horizontal">
+                                                        <ComboBox Width="190"
+                                                                  HorizontalAlignment="Left"
+                                                                  ItemsSource="{Binding SaveComboButtonOptions}"
+                                                                  DisplayMemberPath="DisplayName"
+                                                                  SelectedValuePath="Id"
+                                                                  SelectedValue="{Binding SaveComboButton1, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                        <TextBlock Margin="10,0,0,0"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="+" />
+                                                        <ComboBox Width="190"
+                                                                  Margin="10,0,0,0"
+                                                                  HorizontalAlignment="Left"
+                                                                  ItemsSource="{Binding SaveComboButtonOptions}"
+                                                                  DisplayMemberPath="DisplayName"
+                                                                  SelectedValuePath="Id"
+                                                                  SelectedValue="{Binding SaveComboButton2, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                    </StackPanel>
+                                                    <TextBlock Margin="0,12,0,5"
+                                                               FontSize="12"
+                                                               Text="Tiempo de mantener pulsado (segundos)" />
+                                                    <TextBox Width="100"
+                                                             HorizontalAlignment="Left"
+                                                             Text="{Binding SaveComboHoldSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                </StackPanel>
                                             </StackPanel>
                                         </Border>
                                                 </StackPanel>

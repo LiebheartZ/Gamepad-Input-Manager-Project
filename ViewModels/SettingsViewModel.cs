@@ -31,6 +31,8 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private bool _skipUpdateNotifications;
     private int _virtualInputPollIntervalMs;
     private string _updateChannel = UpdateChannels.Standard;
+    private string _notificationMode = NotificationModes.Always;
+    private double _notificationQueueIntervalSeconds = 3;
     private int _selectedCategoryIndex;
     private bool _isBusy;
     private string _statusTitle = "Ajustes cargados";
@@ -61,6 +63,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     [
         new(UpdateChannels.Standard, "Estándar"),
         new(UpdateChannels.Nightly, "Nightly")
+    ];
+
+    public IReadOnlyList<ThemeOption> NotificationModeOptions { get; } =
+    [
+        new(NotificationModes.Always, "Siempre"),
+        new(NotificationModes.WindowOnly, "Solo con GDM visible"),
+        new(NotificationModes.Off, "Desactivadas")
     ];
 
     public IReadOnlyList<string> Categories { get; } =
@@ -167,6 +176,20 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         set => SetProperty(ref _updateChannel, value);
     }
 
+    public string NotificationMode
+    {
+        get => _notificationMode;
+        set => SetProperty(ref _notificationMode, NotificationModes.Normalize(value));
+    }
+
+    public double NotificationQueueIntervalSeconds
+    {
+        get => _notificationQueueIntervalSeconds;
+        set => SetProperty(
+            ref _notificationQueueIntervalSeconds,
+            double.IsFinite(value) ? Math.Clamp(value, 1, 60) : 3);
+    }
+
     public int SelectedCategoryIndex
     {
         get => _selectedCategoryIndex;
@@ -255,6 +278,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         _skipUpdateNotifications = settings.SkipUpdateNotifications;
         _updateChannel = UpdateChannels.Normalize(settings.UpdateChannel);
         _virtualInputPollIntervalMs = Math.Clamp(settings.VirtualInputPollIntervalMs, 4, 100);
+        _notificationMode = NotificationModes.Normalize(settings.NotificationMode);
+        _notificationQueueIntervalSeconds =
+            double.IsFinite(settings.NotificationQueueIntervalSeconds)
+                ? Math.Clamp(settings.NotificationQueueIntervalSeconds, 1, 60)
+                : 3;
 
         _saveCommand = new AsyncCommand(SaveAsync, () => !IsBusy);
         _restoreDefaultsCommand = new AsyncCommand(RestoreDefaultsAsync, () => !IsBusy);
@@ -330,7 +358,12 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             CheckForUpdatesOnStartup = CheckForUpdatesOnStartup,
             SkipUpdateNotifications = SkipUpdateNotifications,
             UpdateChannel = UpdateChannels.Normalize(UpdateChannel),
-            VirtualInputPollIntervalMs = Math.Clamp(VirtualInputPollIntervalMs, 4, 100)
+            VirtualInputPollIntervalMs = Math.Clamp(VirtualInputPollIntervalMs, 4, 100),
+            NotificationMode = NotificationModes.Normalize(NotificationMode),
+            NotificationQueueIntervalSeconds =
+                double.IsFinite(NotificationQueueIntervalSeconds)
+                    ? Math.Clamp(NotificationQueueIntervalSeconds, 1, 60)
+                    : 3
         },
         "Se guardaron los ajustes.",
         "Ajustes guardados");
@@ -391,6 +424,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             SkipUpdateNotifications = settings.SkipUpdateNotifications;
             UpdateChannel = settings.UpdateChannel;
             VirtualInputPollIntervalMs = settings.VirtualInputPollIntervalMs;
+            NotificationMode = NotificationModes.Normalize(settings.NotificationMode);
+            NotificationQueueIntervalSeconds =
+                double.IsFinite(settings.NotificationQueueIntervalSeconds)
+                    ? Math.Clamp(settings.NotificationQueueIntervalSeconds, 1, 60)
+                    : 3;
             _applySettings(settings);
             StatusTitle = successTitle;
             StatusMessage = successMessage;

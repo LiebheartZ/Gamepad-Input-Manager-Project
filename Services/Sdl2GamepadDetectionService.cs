@@ -45,14 +45,14 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
             return Task.CompletedTask;
         }
 
-        // SDL3 prefiere XInput/WGI para mandos Xbox y reporta rutas "XInput#N"
-        // que no son interfaces HID: HidHide, la identificación de mandos
-        // virtuales y la lectura HID de batería necesitan rutas HID reales.
-        // Forzamos el driver HIDAPI para Xbox para recuperar el comportamiento
-        // de SDL2 (rutas \\?\HID#...).
+        // SDL3 usa XInput para mandos Xbox (también por Bluetooth) y reporta
+        // rutas "XInput#N" sin interfaz HID. En Windows el endpoint HID de
+        // esos mandos es "falso" (no entrega informes reales), por lo que
+        // desactivar XInput deja el mando sin entrada ni vibración. Dejamos
+        // XInput activo y resolvemos la ruta HID real por VID/PID más abajo
+        // para que HidHide, el reinicio PnP y la batería sigan funcionando.
         NativeMethods.SDL_SetHint("SDL_JOYSTICK_HIDAPI_XBOX", "1");
         NativeMethods.SDL_SetHint("SDL_JOYSTICK_HIDAPI", "1");
-        NativeMethods.SDL_SetHint("SDL_XINPUT_ENABLED", "0");
 
         if (SDL.SDL_Init(SDL.SDL_INIT_JOYSTICK | SDL.SDL_INIT_GAMECONTROLLER) < 0)
         {
@@ -237,9 +237,11 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
         ushort high = (ushort)Math.Clamp(highMotor, 0, ushort.MaxValue);
         uint duration = (uint)Math.Clamp(durationMilliseconds, 0, int.MaxValue);
         bool sent = false;
-        if (openJoystick.GameControllerHandle != IntPtr.Zero &&
-            NativeMethods.SDL_GameControllerHasRumble(openJoystick.GameControllerHandle) == 1)
+        if (openJoystick.GameControllerHandle != IntPtr.Zero)
         {
+            // Algunos drivers (p. ej. Xbox One por Bluetooth vía SDL3) no
+            // anuncian HasRumble pero sí aceptan la llamada: se intenta
+            // directamente y el propio SDL indica si falló.
             sent = NativeMethods.SDL_GameControllerRumble(
                 openJoystick.GameControllerHandle, low, high, duration) == 0;
             if (!sent &&
@@ -248,12 +250,27 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
                 sent = NativeMethods.SDL_GameControllerRumbleTriggers(
                     openJoystick.GameControllerHandle, (short)low, (short)high, duration) == 0;
             }
+
+            if (!sent)
+            {
+                int hasRumble = NativeMethods.SDL_GameControllerHasRumble(openJoystick.GameControllerHandle);
+                int hasTriggers = NativeMethods.SDL_GameControllerHasRumbleTriggers(openJoystick.GameControllerHandle);
+                _diagnosticLog?.Invoke(
+                    $"Vibración rechazada por gamepad «{openJoystick.Device.Name}»: " +
+                    $"SDL={SDL.SDL_GetError() ?? "?"} HasRumble={hasRumble} HasTriggers={hasTriggers}");
+            }
         }
 
-        if (!sent && NativeMethods.SDL_JoystickHasRumble(openJoystick.Handle) == 1)
+        if (!sent)
         {
             sent = NativeMethods.SDL_JoystickRumble(
                 openJoystick.Handle, low, high, duration) == 0;
+            if (!sent)
+            {
+                _diagnosticLog?.Invoke(
+                    $"Vibración de joystick rechazada para «{openJoystick.Device.Name}»: " +
+                    $"{SDL.SDL_GetError() ?? "?"}");
+            }
         }
 
         return sent;
@@ -346,6 +363,7 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
             if (currentInstanceIds.Contains(instanceId) &&
                 NativeMethods.SDL_JoystickGetAttached(openJoystick.Handle) != 0)
             {
+                TryHealNonHidPath(instanceId, openJoystick);
                 continue;
             }
 
@@ -381,6 +399,32 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
             ushort vendorId = SDL.SDL_JoystickGetVendor(joystick);
             ushort productId = SDL.SDL_JoystickGetProduct(joystick);
             string? devicePath = GetJoystickPath(joystick);
+            if (devicePath is null ||
+                !devicePath.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+            {
+                // La interfaz HID puede tardar un instante en registrarse en
+                // PnP después de que SDL vea el dispositivo por XInput (típico
+                // del mando virtual recreado por HidMaestro). La ruta solo se
+                // resuelve al abrir el joystick, así que reintentamos aquí;
+                // si no, el dispositivo quedaría con "XInput#N" de forma
+                // permanente y no se le podría aplicar HidHide ni identificar
+                // como mando virtual.
+                for (int attempt = 0; attempt < 5; attempt++)
+                {
+                    string? resolved = HidDevicePathResolver.ResolveByVidPid(
+                        vendorId, productId);
+                    if (resolved is not null)
+                    {
+                        devicePath = resolved;
+                        break;
+                    }
+
+                    if (attempt < 4)
+                    {
+                        Thread.Sleep(60);
+                    }
+                }
+            }
             var device = new ConnectedGamepad
             {
                 DeviceKey = $"SDL2:{openedInstanceId}",
@@ -396,9 +440,7 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
                 ConnectionTransport = DetectConnectionTransport(devicePath, vendorId, productId),
                 BatteryLevel = ReadBatteryLevel(joystick)
             };
-            IntPtr gameController = NativeMethods.SDL_IsGameController(index) == 1
-                ? NativeMethods.SDL_GameControllerOpen(index)
-                : IntPtr.Zero;
+            IntPtr gameController = TryOpenGameController(index, device);
             device = device with { HasStandardMapping = gameController != IntPtr.Zero };
             if (gameController != IntPtr.Zero)
             {
@@ -421,6 +463,44 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
             FilterRedundantInterfaces(devices);
         _redundantInterfaces = redundant;
         return kept;
+    }
+
+    /// <summary>
+    /// Los dispositivos vistos por XInput ("XInput#N") pueden abrirse antes de
+    /// que Windows registre su interfaz HID en PnP. Si la ruta sigue sin ser
+    /// \\?\HID#... en enumeraciones posteriores, se reintenta la resolución y
+    /// se actualiza el dispositivo (ruta, marca de virtual, transporte).
+    /// </summary>
+    private void TryHealNonHidPath(int instanceId, OpenJoystick openJoystick)
+    {
+        ConnectedGamepad device = openJoystick.Device;
+        if (device.DevicePath is not null &&
+            device.DevicePath.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (device.VendorId is not ushort vendorId ||
+            device.ProductId is not ushort productId)
+        {
+            return;
+        }
+
+        string? resolved = HidDevicePathResolver.ResolveByVidPid(vendorId, productId);
+        if (resolved is null)
+        {
+            return;
+        }
+
+        ConnectedGamepad healed = device with
+        {
+            DevicePath = resolved,
+            IsVirtualGamepad = HidMaestroDeviceIdentifier.IsVirtualGamepad(resolved),
+            ConnectionTransport = DetectConnectionTransport(resolved, vendorId, productId)
+        };
+        _openJoysticks[instanceId] = openJoystick with { Device = healed };
+        _diagnosticLog?.Invoke(
+            $"Se resolvió la ruta HID de «{device.Name}» tras la apertura: {resolved}");
     }
 
     private static (IReadOnlyList<ConnectedGamepad> Kept, IReadOnlyList<ConnectedGamepad> Redundant)
@@ -457,6 +537,89 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
         }
 
         return (result, redundant);
+    }
+
+    /// <summary>
+    /// Mapeos SDL adicionales para mandos cuyo GUID en Windows no coincide con
+    /// las entradas de la base interna de SDL (típico en Bluetooth, donde el
+    /// GUID se calcula distinto que en otras plataformas). El cuerpo del
+    /// mapeo replica la entrada oficial de SDL para el mismo VID/PID.
+    /// </summary>
+    private static readonly (ushort VendorId, ushort ProductId, string MappingBody)[]
+        ExtraGamepadMappings =
+    [
+        // Xbox One S por Bluetooth (firmware antiguo): SDL tiene la entrada
+        // 050000005e040000e002000000783f00 pero el GUID de Windows difiere.
+        (0x045E, 0x02E0, XboxOneSControllerMapping),
+        (0x045E, 0x02EA, XboxOneSControllerMapping),
+        (0x045E, 0x02FD, XboxOneSControllerMapping)
+    ];
+
+    // Layout real del driver HIDAPI de SDL3 para este mando (verificado
+    // empíricamente): 11 botones (índices = orden de botones de gamepad SDL),
+    // cruceta por hat h0, y ejes en orden LX, LY, LT, RX, RY, RT.
+    private const string XboxOneSControllerMapping =
+        "a:b0,b:b1,back:b4,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1," +
+        "guide:b5,leftshoulder:b9,leftstick:b7,lefttrigger:a2," +
+        "leftx:a0,lefty:a1,rightshoulder:b10,rightstick:b8,righttrigger:a5," +
+        "rightx:a3,righty:a4,start:b6,x:b2,y:b3,";
+
+    private readonly HashSet<string> _extraMappingAttempts = new(StringComparer.Ordinal);
+    private readonly Action<string>? _diagnosticLog;
+
+    public Sdl2GamepadDetectionService(Action<string>? diagnosticLog = null)
+    {
+        _diagnosticLog = diagnosticLog;
+    }
+
+    private IntPtr TryOpenGameController(int joystickIndex, ConnectedGamepad device)
+    {
+        if (NativeMethods.SDL_IsGameController(joystickIndex) != 1)
+        {
+            TryAddExtraMapping(device);
+            int isController = NativeMethods.SDL_IsGameController(joystickIndex);
+            _diagnosticLog?.Invoke(
+                $"Comprobación de mapeo extra «{device.Name}»: IsGameController={isController}.");
+            if (isController != 1)
+            {
+                return IntPtr.Zero;
+            }
+        }
+
+        IntPtr controller = NativeMethods.SDL_GameControllerOpen(joystickIndex);
+        if (controller == IntPtr.Zero)
+        {
+            _diagnosticLog?.Invoke(
+                $"SDL_GameControllerOpen falló para «{device.Name}»: {SDL.SDL_GetError()}");
+        }
+
+        return controller;
+    }
+
+    private void TryAddExtraMapping(ConnectedGamepad device)
+    {
+        if (device.SdlGuid is null ||
+            device.VendorId is not ushort vendorId ||
+            device.ProductId is not ushort productId ||
+            !_extraMappingAttempts.Add(device.SdlGuid))
+        {
+            return;
+        }
+
+        foreach ((ushort vid, ushort pid, string mappingBody) in ExtraGamepadMappings)
+        {
+            if (vid != vendorId || pid != productId)
+            {
+                continue;
+            }
+
+            string mapping = $"{device.SdlGuid},{device.Name},{mappingBody}";
+            int result = NativeMethods.SDL_GameControllerAddMapping(mapping);
+            _diagnosticLog?.Invoke(result >= 0
+                ? $"Se añadió un mapeo SDL adicional para «{device.Name}» (GUID={device.SdlGuid})."
+                : $"No se pudo añadir el mapeo SDL adicional para «{device.Name}»: {SDL.SDL_GetError()}");
+            return;
+        }
     }
 
     private void CleanupDeviceState(string deviceKey, int instanceId)
@@ -906,10 +1069,29 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
 
     private static string? GetSdlGuid(IntPtr joystick)
     {
-        var buffer = new StringBuilder(33);
-        NativeMethods.SDL_JoystickGetGUIDString(joystick, buffer, buffer.Capacity);
-        string value = buffer.ToString();
-        return string.IsNullOrWhiteSpace(value) ? null : value;
+        try
+        {
+            SdlJoystickGuid guid = NativeMethods.SDL_JoystickGetGUID(joystick);
+            var buffer = new StringBuilder(33);
+            NativeMethods.SDL_JoystickGetGUIDString(guid, buffer, buffer.Capacity);
+            string value = buffer.ToString();
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Equivalente binario de SDL_JoystickGUID/SDL_GUID (16 bytes). Se pasa
+    /// por valor a las funciones SDL, igual que el struct nativo.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SdlJoystickGuid
+    {
+        public ulong Low;
+        public ulong High;
     }
 
     private static class NativeMethods
@@ -951,8 +1133,12 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
         internal static extern IntPtr SDL_JoystickPath(IntPtr joystick);
 
         [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern SdlJoystickGuid SDL_JoystickGetGUID(IntPtr joystick);
+
+        [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl,
+            EntryPoint = "SDL_JoystickGetGUIDString")]
         internal static extern void SDL_JoystickGetGUIDString(
-            IntPtr joystick,
+            SdlJoystickGuid guid,
             StringBuilder pszGUID,
             int cbGUID);
 
@@ -976,6 +1162,11 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
 
         [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr SDL_GameControllerOpen(int joystickIndex);
+
+        [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl,
+            EntryPoint = "SDL_GameControllerAddMapping")]
+        internal static extern int SDL_GameControllerAddMapping(
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string mapping);
 
         [DllImport("SDL2.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void SDL_GameControllerClose(IntPtr gameController);

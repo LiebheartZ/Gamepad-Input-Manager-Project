@@ -20,6 +20,8 @@ public sealed record AppSettings
     public int VirtualInputPollIntervalMs { get; init; } = 8;
     public string CloseButtonBehavior { get; init; } = CloseButtonBehaviors.HideToTray;
     public bool ShowExitConfirmation { get; init; } = true;
+    public string NotificationMode { get; init; } = NotificationModes.Always;
+    public double NotificationQueueIntervalSeconds { get; init; } = 3;
     public double WindowWidth { get; init; } = 800;
     public double WindowHeight { get; init; } = 600;
 }

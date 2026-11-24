@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <Version>0.1.7</Version>
-    <AssemblyVersion>0.1.7.0</AssemblyVersion>
-    <FileVersion>0.1.7.0</FileVersion>
-    <InformationalVersion>0.1.7</InformationalVersion>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <Version>0.1.8</Version>
+    <AssemblyVersion>0.1.8.0</AssemblyVersion>
+    <FileVersion>0.1.8.0</FileVersion>
+    <InformationalVersion>0.1.8</InformationalVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -18,6 +18,7 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Toolkit.Uwp.Notifications" Version="7.1.3" />
     <PackageReference Include="Sayers.SDL2.Core" Version="1.0.11" />
     <Reference Include="HIDMaestro.Core">
       <HintPath>ThirdParty\HIDMaestro\2.1.0\HIDMaestro.Core.dll</HintPath>
@@ -27,26 +28,18 @@
   <ItemGroup>
     <Compile Remove="tests\**\*.cs" />
     <Compile Remove="Otros\**\*.cs" />
+    <Compile Remove="Tools\**\*.cs" />
+    <None Remove="Tools\**" />
     <Page Remove="Otros\**\*.xaml" />
     <EmbeddedResource Remove="Otros\**" />
     <None Remove="Otros\**" />
     <Resource Include="cover.ico" />
-    <None Update="ThirdParty\HIDMaestro\2.1.0\LICENSE"
-          CopyToOutputDirectory="PreserveNewest"
-          TargetPath="Licenses\HIDMaestro\LICENSE" />
-    <None Update="ThirdParty\HIDMaestro\2.1.0\THIRD-PARTY-NOTICES.txt"
-          CopyToOutputDirectory="PreserveNewest"
-          TargetPath="Licenses\HIDMaestro\THIRD-PARTY-NOTICES.txt" />
-    <None Include="ThirdParty\SDL2\2.32.74\README-SDL.txt"
-          CopyToOutputDirectory="PreserveNewest"
-          TargetPath="Licenses\SDL2\README-SDL.txt" />
+    <None Update="ThirdParty\HIDMaestro\2.1.0\LICENSE" CopyToOutputDirectory="PreserveNewest" TargetPath="Licenses\HIDMaestro\LICENSE" />
+    <None Update="ThirdParty\HIDMaestro\2.1.0\THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" TargetPath="Licenses\HIDMaestro\THIRD-PARTY-NOTICES.txt" />
+    <None Include="ThirdParty\SDL2\2.32.74\README-SDL.txt" CopyToOutputDirectory="PreserveNewest" TargetPath="Licenses\SDL2\README-SDL.txt" />
   </ItemGroup>
   <Target Name="CopyUpdatedSdlRuntime" AfterTargets="CopyFilesToOutputDirectory">
-    <Copy SourceFiles="ThirdParty\SDL2\2.32.74\SDL2.dll"
-          DestinationFiles="$(OutDir)SDL2.dll"
-          SkipUnchangedFiles="true" />
-    <Copy SourceFiles="ThirdParty\SDL2\2.32.74\SDL3.dll"
-          DestinationFiles="$(OutDir)SDL3.dll"
-          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="ThirdParty\SDL2\2.32.74\SDL2.dll" DestinationFiles="$(OutDir)SDL2.dll" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="ThirdParty\SDL2\2.32.74\SDL3.dll" DestinationFiles="$(OutDir)SDL3.dll" SkipUnchangedFiles="true" />
   </Target>
 </Project>

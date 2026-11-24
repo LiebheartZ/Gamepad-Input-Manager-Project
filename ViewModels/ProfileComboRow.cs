@@ -72,8 +72,18 @@ public sealed class ProfileComboRow : INotifyPropertyChanged
     public string ActionType
     {
         get => _actionType;
-        set => SetProperty(ref _actionType, value);
+        set
+        {
+            if (SetProperty(ref _actionType, value))
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(UsesTargetButtons)));
+            }
+        }
     }
+
+    /// <summary>Solo la acción «pulsar botones» usa la lista de botones de salida.</summary>
+    public bool UsesTargetButtons =>
+        ActionType == ComboActionTypes.Buttons;
 
     public ProfileComboRow(
         Guid comboId,

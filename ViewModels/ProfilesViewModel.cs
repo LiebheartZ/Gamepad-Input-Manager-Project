@@ -65,10 +65,16 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     private readonly AsyncCommand _restoreCommand;
     private readonly AsyncCommand _assignCommand;
     private readonly GamepadComboEvaluator _comboEvaluator = new();
+    private readonly GamepadComboEvaluator _saveComboEvaluator = new();
+    private readonly Dictionary<string, long> _saveComboLastReadMs = new(StringComparer.Ordinal);
+    private const long SaveComboPollIntervalMs = 50;
+    private static readonly Guid SaveNewControllerComboId =
+        new("6b1d4f2e-8c3a-4e5b-9d7f-2a1c8e4b6d3f");
     private ControllerListItem[] _connectedControllerItems = [];
     private ConnectedGamepad[] _allConnectedDevices = [];
     private readonly Dictionary<Guid, string> _autoStartAttempts = [];
     private readonly HashSet<Guid> _autoStartSuppressed = [];
+    private readonly HashSet<Guid> _autoHideSuppressedControllers = [];
     private readonly List<Task> _startupAutoStartTasks = [];
     private readonly HashSet<string> _autoHiddenDeviceKeys = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DevicePresenceState> _autoHiddenPresenceStates = new(StringComparer.Ordinal);
@@ -98,6 +104,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     private Task? _initializationTask;
     private readonly IGlobalPresetRepository? _globalPresetRepository;
     private GlobalPreset _globalPreset = GlobalPreset.Default;
+    private readonly Func<ConnectedGamepad, Task<bool>>? _saveUnsavedController;
+    private readonly Action<string, string[]>? _notifyEvent;
 
     private sealed record EffectiveSettingsCacheEntry(
         GlobalPreset Preset,
@@ -411,7 +419,9 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         IControllerPowerOffService? powerOffService = null,
         Func<int>? defaultInputPollIntervalMs = null,
         Func<ConnectedGamepad, bool>? isDeviceHiddenByGdm = null,
-        IGlobalPresetRepository? globalPresetRepository = null)
+        IGlobalPresetRepository? globalPresetRepository = null,
+        Func<ConnectedGamepad, Task<bool>>? saveUnsavedController = null,
+        Action<string, string[]>? notifyEvent = null)
     {
         _profileRepository = profileRepository;
         _controllerRepository = controllerRepository;
@@ -427,6 +437,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         _isPhysicalDevicePresent = isPhysicalDevicePresent;
         _isDeviceHiddenByGdm = isDeviceHiddenByGdm;
         _globalPresetRepository = globalPresetRepository;
+        _saveUnsavedController = saveUnsavedController;
+        _notifyEvent = notifyEvent;
         _defaultVirtualGamepadType = defaultVirtualGamepadType;
         _ledService = ledService;
         _powerOffService = powerOffService;
@@ -562,7 +574,9 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         RemoveWhere(_physicalPresenceCheckMs, IsStale);
         RemoveWhere(_physicalPresenceMissingSinceMs, IsStale);
         RemoveWhere(_lastPhysicalRescanMs, IsStale);
+        RemoveWhere(_saveComboLastReadMs, IsStale);
         _comboEvaluator.RemoveStale(active);
+        _saveComboEvaluator.RemoveStale(active);
     }
 
     private static void RemoveWhere<TKey, TValue>(
@@ -657,6 +671,12 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
 
                         if (await ConfirmHiddenInputUnavailableAsync(device))
                         {
+                            // SDL no puede leer el mando mientras HidHide lo oculta
+                            // (p. ej. mandos Sony por hidapi). Se pausa el
+                            // auto-ocultamiento de este controlador durante la
+                            // sesión para que el reinicio automático no vuelva a
+                            // ocultarlo y entrar en bucle.
+                            _autoHideSuppressedControllers.Add(item.Record.ControllerId);
                             bool physicalDeviceRestored =
                                 await RestoreAutoHiddenDeviceAsync(device, force: true);
                             WriteAutoHideDiagnostic(
@@ -784,6 +804,76 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                     ResolveVirtualGamepadType(item.Record));
                 NotifyVirtualOutputStateChanged();
             }
+        }
+
+        await PollSaveNewControllerCombosAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Evalúa el combo global de «guardar mando nuevo» sobre los mandos físicos
+    /// conectados que aún no tienen registro guardado. Funciona con cualquier
+    /// modo de «Dispositivos no guardados», porque no depende de los registros
+    /// temporales ni de la salida virtual.
+    /// </summary>
+    private async Task PollSaveNewControllerCombosAsync(CancellationToken cancellationToken)
+    {
+        NewControllerSaveCombo config = _globalPreset.SaveNewControllerCombo;
+        if (_inputService is null ||
+            _saveUnsavedController is null ||
+            !config.Enabled ||
+            config.Buttons.Count == 0)
+        {
+            return;
+        }
+
+        ControllerCombo combo = new()
+        {
+            ComboId = SaveNewControllerComboId,
+            DisplayName = "Guardar mando nuevo",
+            Buttons = config.Buttons,
+            RequiresHold = true,
+            HoldMilliseconds = config.HoldMilliseconds
+        };
+
+        long now = Environment.TickCount64;
+        foreach (ControllerListItem item in _connectedControllerItems)
+        {
+            ConnectedGamepad? device = item.ConnectedDevice;
+            if (device is null || !item.CanSave)
+            {
+                continue;
+            }
+
+            if (_saveComboLastReadMs.TryGetValue(device.DeviceKey, out long lastRead) &&
+                now - lastRead < SaveComboPollIntervalMs)
+            {
+                continue;
+            }
+
+            _saveComboLastReadMs[device.DeviceKey] = now;
+            GamepadInputSnapshot? snapshot = await _inputService.ReadInputAsync(
+                device.DeviceKey,
+                cancellationToken);
+            if (snapshot is null)
+            {
+                continue;
+            }
+
+            ComboEvaluation evaluation = _saveComboEvaluator.Evaluate(
+                device.DeviceKey,
+                snapshot,
+                [combo]);
+            if (evaluation.TriggeredCombos.Count == 0)
+            {
+                continue;
+            }
+
+            bool saved = await _saveUnsavedController(device);
+            _notifyEvent?.Invoke(
+                saved ? "Mando guardado" : "No se pudo guardar el mando",
+                [saved
+                    ? $"«{device.Name}» se registró como mando guardado."
+                    : $"No se pudo registrar «{device.Name}». Revisa la pestaña Mandos."]);
         }
     }
 
@@ -1848,7 +1938,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         return VirtualGamepadTypes.Normalize(type);
     }
 
-    private string ResolveVirtualGamepadType(ControllerRecord record)
+    public string ResolveVirtualGamepadType(ControllerRecord record)
     {
         string? overrideType = record.SettingOverrides?.VirtualGamepadType;
         if (VirtualGamepadTypes.IsSupported(overrideType))
@@ -2084,7 +2174,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 output = new VirtualGamepadControllerViewModel(
                     record,
                     StartVirtualGamepadAsync,
-                    StopVirtualGamepadAsync,
+                    StopVirtualGamepadNotifyingAsync,
                     ToggleAutoStartVirtualGamepadAsync,
                     ToggleAutoHidePhysicalGamepadAsync,
                     PowerOffControllerAsync,
@@ -2593,6 +2683,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 isRunning: true,
                 virtualGamepadType);
             NotifyVirtualOutputStateChanged();
+            NotifyVirtualGamepadStarted(device, virtualGamepadType, profile);
             await TryAutoHidePhysicalDeviceAsync(item, device);
             _ = ApplyLedStateAsync(item);
         }
@@ -2693,12 +2784,36 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     private Task StopVirtualGamepadAsync(VirtualGamepadControllerViewModel item) =>
         StopVirtualGamepadCoreAsync(item, updateStatus: true);
 
+    /// <summary>
+    /// Parada iniciada por el usuario (botón «Detener» o combo de alternar
+    /// salida): además de detener notifica cómo volver a encenderla.
+    /// Las paradas automáticas (desconexión, errores) no notifican.
+    /// </summary>
+    private Task StopVirtualGamepadNotifyingAsync(VirtualGamepadControllerViewModel item) =>
+        StopVirtualGamepadCoreAsync(item, updateStatus: true, notifyUser: true);
+
+    /// <summary>
+    /// Detiene la salida virtual de un mando guardado (si está activa) antes de
+    /// eliminar su registro: usa el mismo flujo que el botón «Detener», que
+    /// además restaura el ocultamiento de HidHide del mando físico.
+    /// </summary>
+    public async Task StopVirtualOutputForControllerAsync(Guid controllerId)
+    {
+        VirtualGamepadControllerViewModel? item = VirtualGamepads.FirstOrDefault(
+            candidate => candidate.Record.ControllerId == controllerId);
+        if (item is not null)
+        {
+            await StopVirtualGamepadSilentlyAsync(item);
+        }
+    }
+
     private Task StopVirtualGamepadSilentlyAsync(VirtualGamepadControllerViewModel item) =>
         StopVirtualGamepadCoreAsync(item, updateStatus: false);
 
     private async Task StopVirtualGamepadCoreAsync(
         VirtualGamepadControllerViewModel item,
-        bool updateStatus)
+        bool updateStatus,
+        bool notifyUser = false)
     {
         if (_virtualGamepadService is null ||
             item.ConnectedDevice is not { } device ||
@@ -2725,6 +2840,11 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 isRunning: false,
                 ResolveVirtualGamepadType(item.Record));
             NotifyVirtualOutputStateChanged();
+            if (notifyUser)
+            {
+                NotifyVirtualGamepadStopped(item, device);
+            }
+
             if (item.ConnectedDevice is not null)
             {
                 _autoStartSuppressed.Add(item.Record.ControllerId);
@@ -2840,7 +2960,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             if (!virtualOutputActive &&
                 combo.ActionType != ComboActionTypes.PowerOff &&
                 combo.ActionType != ComboActionTypes.StopOutput &&
-                combo.ActionType != ComboActionTypes.SwitchType)
+                combo.ActionType != ComboActionTypes.SwitchType &&
+                combo.ActionType != ComboActionTypes.ShowInfo)
             {
                 continue;
             }
@@ -2850,7 +2971,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 if (virtualOutputActive)
                 {
                     item.SetStatus($"Combo «{combo.DisplayName}»: se detuvo la salida virtual.");
-                    await StopVirtualGamepadAsync(item);
+                    await StopVirtualGamepadNotifyingAsync(item);
                 }
                 else
                 {
@@ -2879,7 +3000,63 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 await PowerOffControllerCoreAsync(item, device, $"combo «{combo.DisplayName}»");
                 return;
             }
+
+            if (combo.ActionType == ComboActionTypes.ShowInfo)
+            {
+                ShowControllerInfoNotification(item, device, profile, combo);
+                return;
+            }
         }
+    }
+
+    /// <summary>
+    /// Acción de combo «Mostrar información del mando»: notificación con los
+    /// datos del dispositivo físico (modelo, fabricante, serie, conexión,
+    /// batería, perfil y tipo de mando virtual configurado).
+    /// </summary>
+    private void ShowControllerInfoNotification(
+        VirtualGamepadControllerViewModel item,
+        ConnectedGamepad device,
+        ControllerProfile? profile,
+        ControllerCombo combo)
+    {
+        var lines = new List<string>
+        {
+            $"Mando: {device.Name}",
+            $"Fabricante: {device.ManufacturerLabel}",
+            $"Hardware: {device.HardwareIdLabel}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(device.SerialNumber) &&
+            !string.Equals(device.SerialNumber, "(n/d)", StringComparison.OrdinalIgnoreCase))
+        {
+            lines.Add($"Serie: {device.SerialNumber}");
+        }
+
+        if (device.ConnectionTransportText is { } transport)
+        {
+            lines.Add($"Conexión: {transport}");
+        }
+
+        if (device.HasBatteryInfo)
+        {
+            lines.Add(device.BatteryInfoText);
+        }
+
+        lines.Add($"Perfil: {profile?.DisplayName ?? "Perfil por mando"}");
+        lines.Add(
+            $"Tipo virtual: {VirtualGamepadTypes.DisplayName(ResolveVirtualGamepadType(item.Record))}");
+        if (device.IsHiddenByGdm)
+        {
+            lines.Add("Estado: oculto por GDM");
+        }
+
+        _notifyEvent?.Invoke(device.Name, [.. lines]);
+        item.SetStatus($"Combo «{combo.DisplayName}»: información del mando mostrada.");
+        WriteAutoHideDiagnostic(
+            DiagnosticLogLevel.Information,
+            $"Combo de información disparado. Controlador={item.Record.ControllerId}; " +
+            $"nombre=\"{combo.DisplayName}\"; mando={DescribeDevice(device)}.");
     }
 
     private async Task SwitchVirtualGamepadTypeAsync(
@@ -2923,6 +3100,10 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 isRunning: true,
                 newType);
             NotifyVirtualOutputStateChanged();
+            _notifyEvent?.Invoke(
+                "Tipo de mando virtual cambiado",
+                [$"{device.Name}: {VirtualGamepadTypes.DisplayName(currentType)} → {VirtualGamepadTypes.DisplayName(newType)}",
+                 $"Perfil: {profile?.DisplayName ?? "Perfil por mando"}"]);
             _ = ApplyLedStateAsync(item);
         }
         catch (Exception exception) when (
@@ -2999,6 +3180,10 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 isRunning: false,
                 newType);
             NotifyVirtualOutputStateChanged();
+            _notifyEvent?.Invoke(
+                "Tipo de mando virtual (próximo inicio)",
+                [$"{device.Name}: {VirtualGamepadTypes.DisplayName(currentType)} → {VirtualGamepadTypes.DisplayName(newType)}",
+                 $"Perfil: {item.ProfileName}"]);
         }
     }
 
@@ -4370,6 +4555,9 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         {
             item.SetStatus(
                 $"Batería {ConnectedGamepad.BatteryLevelDisplayName(level).ToLowerInvariant()}: conecta el cargador.");
+            _notifyEvent?.Invoke(
+                $"Baja batería · {device.Name}",
+                [device.BatteryInfoText, "Conecta el cargador para evitar que se apague."]);
         }
 
         if (settings.BatterySoundEnabled)
@@ -4760,6 +4948,15 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             return;
         }
 
+        if (_autoHideSuppressedControllers.Contains(item.Record.ControllerId))
+        {
+            WriteAutoHideDiagnostic(
+                DiagnosticLogLevel.Information,
+                $"Ocultamiento automático omitido: pausado esta sesión porque SDL no pudo leer el mando oculto. " +
+                $"Controlador={item.Record.ControllerId}; mando={DescribeDevice(device)}.");
+            return;
+        }
+
         if (IsDeviceHiddenByGdm(device))
         {
             _autoHiddenDeviceKeys.Add(device.DeviceKey);
@@ -4856,6 +5053,67 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             $"Windows no encuentra el dispositivo HID oculto: comprobación {missingChecks}/3; " +
             $"mando={DescribeDevice(device)}.");
         return missingChecks >= 3;
+    }
+
+    /// <summary>
+    /// Notifica el encendido de la salida virtual: mando físico, tipo de
+    /// mando virtual, perfil y, si el perfil tiene un combo «Apagar el mando
+    /// físico», la primera combinación encontrada.
+    /// </summary>
+    private void NotifyVirtualGamepadStarted(
+        ConnectedGamepad device,
+        string virtualGamepadType,
+        ControllerProfile? profile)
+    {
+        var lines = new List<string>
+        {
+            $"Mando físico: {device.Name}",
+            $"Tipo virtual: {VirtualGamepadTypes.DisplayName(virtualGamepadType)}",
+            $"Perfil: {profile?.DisplayName ?? "Perfil por mando"}"
+        };
+
+        ControllerCombo? powerOffCombo = profile?.Combos?.FirstOrDefault(
+            combo => combo.ActionType == ComboActionTypes.PowerOff);
+        if (powerOffCombo is not null)
+        {
+            lines.Add($"Apagar el mando: {FormatComboButtons(powerOffCombo)}");
+        }
+
+        _notifyEvent?.Invoke("Mando virtual encendido", [.. lines]);
+    }
+
+    /// <summary>
+    /// Notifica el apagado manual/por combo de la salida virtual e indica el
+    /// combo para reactivarla si el perfil tiene uno de alternar salida.
+    /// </summary>
+    private void NotifyVirtualGamepadStopped(
+        VirtualGamepadControllerViewModel item,
+        ConnectedGamepad device)
+    {
+        var lines = new List<string> { $"Mando físico: {device.Name}" };
+
+        ControllerCombo? toggleCombo = FindAssignedProfile(item.Record)?.Combos
+            ?.FirstOrDefault(combo => combo.ActionType == ComboActionTypes.StopOutput);
+        if (toggleCombo is not null)
+        {
+            lines.Add($"Para encenderlo: {FormatComboButtons(toggleCombo)}");
+        }
+
+        _notifyEvent?.Invoke("Mando virtual apagado", [.. lines]);
+    }
+
+    private static string FormatComboButtons(ControllerCombo combo)
+    {
+        string names = string.Join(
+            " + ",
+            combo.Buttons.Select(id => GamepadControlCatalog.Buttons
+                .FirstOrDefault(option => option.Id == id)?.DisplayName ?? id));
+        if (combo.RequiresHold && combo.HoldMilliseconds > 0)
+        {
+            names += $" durante {combo.HoldMilliseconds / 1000d:0.#} s";
+        }
+
+        return names;
     }
 
     private void WriteAutoHideDiagnostic(

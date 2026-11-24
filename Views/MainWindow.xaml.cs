@@ -91,6 +91,7 @@ public partial class MainWindow : Window
             Visible = true
         };
         _trayIcon.DoubleClick += (_, _) => ShowFromTray();
+        _trayIcon.BalloonTipClicked += (_, _) => ActivateFromExternalRequest();
 
         _viewModel = new MainWindowViewModel(
             gamepadDetectionService,
@@ -114,7 +115,8 @@ public partial class MainWindow : Window
                 "Eliminar perfil",
                 $"Se eliminará el perfil «{profile.DisplayName}». Esta acción no se puede deshacer.\n\n¿Deseas continuar?",
                 AppDialogIcon.Warning,
-                this));
+                this),
+            trayBalloon: ShowTrayBalloon);
         DataContext = _viewModel;
         Loaded += async (_, _) =>
         {
@@ -147,6 +149,22 @@ public partial class MainWindow : Window
         _viewModel.HandleSettingsAppliedAsync(previous, current);
 
     public void HideToTray() => Hide();
+
+    /// <summary>
+    /// Muestra una notificación como globo del icono de bandeja. Se usa como
+    /// alternativa a los toast cuando GDM se ejecuta elevado, ya que Windows
+    /// no muestra notificaciones toast de procesos con privilegios de admin.
+    /// </summary>
+    private void ShowTrayBalloon(string title, string text)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.BeginInvoke(() => ShowTrayBalloon(title, text));
+            return;
+        }
+
+        _trayIcon.ShowBalloonTip(4000, title, text, System.Windows.Forms.ToolTipIcon.Info);
+    }
 
     public void ActivateFromExternalRequest()
     {
