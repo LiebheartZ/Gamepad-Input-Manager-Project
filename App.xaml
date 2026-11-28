@@ -19,6 +19,9 @@
         <SolidColorBrush x:Key="ButtonBorderBrush" Color="#C3D0DC" />
         <SolidColorBrush x:Key="SelectionBrush" Color="#1477D4" />
         <SolidColorBrush x:Key="ConnectedStatusBrush" Color="#177A56" />
+        <SolidColorBrush x:Key="WarningBrush" Color="#A05E00" />
+        <SolidColorBrush x:Key="WarningPanelBrush" Color="#FFF4E0" />
+        <SolidColorBrush x:Key="WarningBorderBrush" Color="#E4B95B" />
 
         <Style TargetType="Button">
             <Setter Property="Background" Value="{DynamicResource ButtonBrush}" />

@@ -52,7 +52,7 @@ namespace GDM.Views {
                 return;
             }
             _contentLoaded = true;
-            System.Uri resourceLocater = new System.Uri("/GDM;V286.0.0.0;component/views/profileeditorview.xaml", System.UriKind.Relative);
+            System.Uri resourceLocater = new System.Uri("/GDM;V292.0.0.0;component/views/profileeditorview.xaml", System.UriKind.Relative);
             
             #line 1 "..\..\..\Views\ProfileEditorView.xaml"
             System.Windows.Application.LoadComponent(this, resourceLocater);
