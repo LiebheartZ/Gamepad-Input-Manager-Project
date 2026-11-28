@@ -26,9 +26,11 @@ public sealed class ToastNotificationService
 
     private readonly Func<bool> _isWindowVisible;
     private readonly Func<string> _notificationMode;
+    private readonly Func<string, bool>? _isEventEnabled;
     private readonly Action<string, string>? _balloonFallback;
     private readonly Action<string>? _diagnosticLog;
     private readonly Func<int>? _queueIntervalMs;
+    private readonly Action? _onToastActivated;
     private readonly bool _isElevated;
     private bool _initialized;
     private readonly Dictionary<string, long> _lastShownAtMs = new(StringComparer.Ordinal);
@@ -42,13 +44,17 @@ public sealed class ToastNotificationService
         Func<string> notificationMode,
         Action<string, string>? balloonFallback = null,
         Action<string>? diagnosticLog = null,
-        Func<int>? queueIntervalMs = null)
+        Func<int>? queueIntervalMs = null,
+        Action? onToastActivated = null,
+        Func<string, bool>? isEventEnabled = null)
     {
         _isWindowVisible = isWindowVisible;
         _notificationMode = notificationMode;
+        _isEventEnabled = isEventEnabled;
         _balloonFallback = balloonFallback;
         _diagnosticLog = diagnosticLog;
         _queueIntervalMs = queueIntervalMs;
+        _onToastActivated = onToastActivated;
         _isElevated = new WindowsPrincipal(WindowsIdentity.GetCurrent())
             .IsInRole(WindowsBuiltInRole.Administrator);
     }
@@ -88,6 +94,22 @@ public sealed class ToastNotificationService
         }
         _lastShownAtMs[floodKey] = nowMs;
         EnqueueNotification(title, lines);
+    }
+
+    /// <summary>
+    /// Igual que <see cref="Show"/>, pero solo se muestra si el usuario tiene
+    /// activado el evento en Ajustes → Interfaz (ver
+    /// <see cref="Models.NotificationEvents"/>).
+    /// </summary>
+    public void ShowEvent(string eventId, string title, params string[] lines)
+    {
+        if (_isEventEnabled is not null && !_isEventEnabled(eventId))
+        {
+            _diagnosticLog?.Invoke($"Notificación «{title}» suprimida: evento «{eventId}» desactivado.");
+            return;
+        }
+
+        Show(title, lines);
     }
 
     /// <summary>
@@ -215,7 +237,7 @@ public sealed class ToastNotificationService
             }
 
             string helperPath = Path.Combine(directory, NotifyHelperFileName);
-            if (!EnsureNotifyHelperLink(helperPath, executablePath))
+            if (!EnsureHelperLink(helperPath, executablePath))
             {
                 return false;
             }
@@ -256,30 +278,42 @@ public sealed class ToastNotificationService
     /// actual. Un hardlink no ocupa espacio extra y ejecuta el mismo binario;
     /// al arrancar, GDM se reconoce como helper por su nombre de archivo.
     /// </summary>
-    private static bool EnsureNotifyHelperLink(string helperPath, string executablePath)
+    internal static bool EnsureHelperLink(string helperPath, string executablePath)
     {
-        try
+        // Si el helper anterior sigue vivo (arrancó hace un instante), el
+        // borrado del hardlink puede fallar con IOException: se reintenta
+        // unas veces antes de rendirse y perder la notificación.
+        for (int attempt = 0; attempt < 3; attempt++)
         {
-            if (File.Exists(helperPath))
+            try
             {
-                FileInfo helperInfo = new(helperPath);
-                FileInfo exeInfo = new(executablePath);
-                if (helperInfo.Length == exeInfo.Length &&
-                    helperInfo.LastWriteTimeUtc == exeInfo.LastWriteTimeUtc)
+                if (File.Exists(helperPath))
+                {
+                    FileInfo helperInfo = new(helperPath);
+                    FileInfo exeInfo = new(executablePath);
+                    if (helperInfo.Length == exeInfo.Length &&
+                        helperInfo.LastWriteTimeUtc == exeInfo.LastWriteTimeUtc)
+                    {
+                        return true;
+                    }
+
+                    File.Delete(helperPath);
+                }
+
+                if (CreateHardLink(helperPath, executablePath, IntPtr.Zero))
                 {
                     return true;
                 }
-
-                File.Delete(helperPath);
+            }
+            catch (Exception exception) when (
+                exception is IOException or UnauthorizedAccessException)
+            {
             }
 
-            return CreateHardLink(helperPath, executablePath, IntPtr.Zero);
+            Thread.Sleep(200);
         }
-        catch (Exception exception) when (
-            exception is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
+
+        return false;
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -302,12 +336,68 @@ public sealed class ToastNotificationService
             StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Borra los payloads pendientes de sesiones anteriores. Solo los invoca
+    /// la instancia principal al arrancar: si GDM se cerró sin que un helper
+    /// los consumiera, quedarían huérfanos hasta la próxima notificación.
+    /// </summary>
+    public static void CleanupStalePendingToasts()
+    {
+        try
+        {
+            string directory = PendingToastDirectory;
+            if (!Directory.Exists(directory))
+            {
+                return;
+            }
+
+            foreach (string filePath in Directory.GetFiles(directory, $"{PendingToastPrefix}*"))
+            {
+                try
+                {
+                    File.Delete(filePath);
+                }
+                catch (Exception exception) when (
+                    exception is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    /// <summary>
     /// Muestra todos los toasts pendientes y borra sus archivos. Lo invoca el
-    /// modo helper al arrancar; devuelve cuántos se mostraron.
+    /// modo helper al arrancar; devuelve cuántos se mostraron. Tras vaciar la
+    /// carpeta sigue sondeando unos segundos por si llegan payloads de
+    /// notificaciones encoladas justo después, evitando lanzar otro proceso.
     /// </summary>
     public static int ShowPendingToasts()
     {
         int shown = 0;
+        long deadline = Environment.TickCount64 + 6000;
+        int emptyScans = 0;
+        while (Environment.TickCount64 < deadline && emptyScans < 3)
+        {
+            if (DrainPendingToastFiles(ref shown) > 0)
+            {
+                emptyScans = 0;
+            }
+            else
+            {
+                emptyScans++;
+                Thread.Sleep(400);
+            }
+        }
+
+        return shown;
+    }
+
+    private static int DrainPendingToastFiles(ref int shown)
+    {
+        int processed = 0;
         try
         {
             string directory = PendingToastDirectory;
@@ -346,6 +436,7 @@ public sealed class ToastNotificationService
                 try
                 {
                     File.Move(filePath, busyPath);
+                    processed++;
                 }
                 catch (Exception exception) when (
                     exception is IOException or UnauthorizedAccessException)
@@ -395,7 +486,7 @@ public sealed class ToastNotificationService
         {
         }
 
-        return shown;
+        return processed;
     }
 
     /// <summary>
@@ -469,7 +560,7 @@ public sealed class ToastNotificationService
         // Para apps sin empaquetar, el toolkit crea el acceso directo con el
         // AppUserModelID la primera vez; las pulsaciones lanzan una nueva
         // instancia que SingleInstanceCoordinator redirige a la ventana activa.
-        ToastNotificationManagerCompat.OnActivated += _ => { };
+        ToastNotificationManagerCompat.OnActivated += _ => _onToastActivated?.Invoke();
         _initialized = true;
     }
 

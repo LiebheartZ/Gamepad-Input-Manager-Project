@@ -2,7 +2,6 @@ using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Reflection;
 using System.Text.Json;
 using GDM.Services.Abstractions;
 
@@ -238,7 +237,7 @@ public sealed class GitHubUpdateService : IAppUpdateService
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd(
-            $"GDM-UpdateChecker/{Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.0.0"}");
+            $"GDM-UpdateChecker/{AppBuildInfo.Display}");
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return client;
     }

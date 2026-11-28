@@ -468,10 +468,23 @@ public sealed class TesterViewModel : INotifyPropertyChanged
         SelectedDevice = devices.FirstOrDefault(device => device.DeviceKey == selectedKey)
             ?? devices.FirstOrDefault();
         OnPropertyChanged(nameof(ShowNoDevices));
+        OnPropertyChanged(nameof(DevicesSummary));
         _selectDeviceCommand.NotifyCanExecuteChanged();
     }
 
     public bool ShowNoDevices => Devices.Count == 0;
+
+    /// <summary>Resumen de la lista: mandos físicos, virtuales y ocultos por GDM.</summary>
+    public string DevicesSummary
+    {
+        get
+        {
+            int physical = Devices.Count(device => !device.IsVirtualGamepad);
+            int virtualCount = Devices.Count(device => device.IsVirtualGamepad);
+            int hidden = Devices.Count(device => device.IsHiddenByGdm);
+            return $"Físicos: {physical} · Virtuales: {virtualCount} · Ocultos por GDM: {hidden}";
+        }
+    }
 
     public async Task ReadSelectedInputAsync(CancellationToken cancellationToken = default)
     {

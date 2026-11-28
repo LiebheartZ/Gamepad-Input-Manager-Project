@@ -310,13 +310,20 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
         {
             _rumbleGenerations.Remove(deviceKey);
             _rumblePendingStopGeneration.Remove(deviceKey);
-            _rumbleStopTimers.Remove(deviceKey);
+            if (_rumbleStopTimers.Remove(deviceKey, out System.Windows.Threading.DispatcherTimer? removedTimer))
+            {
+                removedTimer.Stop();
+            }
+
             TrySendRumble(deviceKey, 0, 0, 0);
         }
         else if (!_rumbleGenerations.ContainsKey(deviceKey))
         {
             _rumblePendingStopGeneration.Remove(deviceKey);
-            _rumbleStopTimers.Remove(deviceKey);
+            if (_rumbleStopTimers.Remove(deviceKey, out System.Windows.Threading.DispatcherTimer? removedTimer))
+            {
+                removedTimer.Stop();
+            }
         }
     }
 
@@ -890,6 +897,14 @@ public sealed class Sdl2GamepadDetectionService : IGamepadDetectionService, IGam
                 catch
                 {
                     xinputUserIndex = -1;
+                }
+
+                if (xinputUserIndex < 0)
+                {
+                    // Primero se busca el slot del único mando inalámbrico con
+                    // batería: los virtuales y los de cable reportan
+                    // WIRED/DISCONNECTED y no interfieren aunque ocupen slots.
+                    xinputUserIndex = GamepadBatteryProbe.FindSingleBatteryXInputSlot();
                 }
 
                 if (xinputUserIndex < 0)

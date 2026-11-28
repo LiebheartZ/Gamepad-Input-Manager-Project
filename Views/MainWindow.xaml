@@ -109,6 +109,11 @@
                         Style="{StaticResource TopTabButtonStyle}"
                         Tag="Inicio" />
                 <Button Command="{Binding NavigateCommand}"
+                        CommandParameter="Bluetooth"
+                        Content="Bluetooth"
+                        Style="{StaticResource TopTabButtonStyle}"
+                        Tag="Bluetooth" />
+                <Button Command="{Binding NavigateCommand}"
                         CommandParameter="Mandos"
                         Content="Mandos"
                         Style="{StaticResource TopTabButtonStyle}"
@@ -166,10 +171,15 @@
                             CornerRadius="8">
                         <DockPanel>
                             <TextBlock DockPanel.Dock="Top"
-                                       Margin="0,0,0,12"
+                                       Margin="0,0,0,4"
                                        FontSize="16"
                                        FontWeight="SemiBold"
                                        Text="Mandos conectados" />
+                            <TextBlock DockPanel.Dock="Top"
+                                       Margin="0,0,0,12"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Text="{Binding Tester.DevicesSummary}" />
                             <TextBlock DockPanel.Dock="Bottom"
                                        Margin="0,12,0,0"
                                        Foreground="{DynamicResource SecondaryTextBrush}"
@@ -987,9 +997,39 @@
                                                <ColumnDefinition Width="Auto" />
                                            </Grid.ColumnDefinitions>
                                            <StackPanel>
-                                               <TextBlock FontSize="16"
-                                                          FontWeight="SemiBold"
-                                                          Text="{Binding Name}" />
+                                               <StackPanel Orientation="Horizontal">
+                                                   <Border Width="20"
+                                                           Height="20"
+                                                           Margin="0,0,10,0"
+                                                           VerticalAlignment="Center"
+                                                           BorderBrush="{DynamicResource BorderBrush}"
+                                                           BorderThickness="1"
+                                                           CornerRadius="4">
+                                                       <Grid>
+                                                           <Border Background="White"
+                                                                   CornerRadius="3"
+                                                                   Visibility="{Binding HasLedColor, Converter={StaticResource InverseBoolToVisibility}}" />
+                                                           <Border Width="26"
+                                                                   Height="2.5"
+                                                                   Background="#E53935"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   RenderTransformOrigin="0.5,0.5"
+                                                                   Visibility="{Binding HasLedColor, Converter={StaticResource InverseBoolToVisibility}}">
+                                                               <Border.RenderTransform>
+                                                                   <RotateTransform Angle="45" />
+                                                               </Border.RenderTransform>
+                                                           </Border>
+                                                           <Border Background="{Binding LedColorBrush}"
+                                                                   CornerRadius="3"
+                                                                   Visibility="{Binding HasLedColor, Converter={StaticResource BoolToVisibility}}" />
+                                                       </Grid>
+                                                   </Border>
+                                                   <TextBlock VerticalAlignment="Center"
+                                                              FontSize="16"
+                                                              FontWeight="SemiBold"
+                                                              Text="{Binding Name}" />
+                                               </StackPanel>
                                                <TextBlock Margin="0,6,0,0"
                                                           Foreground="{DynamicResource SecondaryTextBrush}"
                                                           Text="{Binding HardwareIdLabel}" />
@@ -1228,6 +1268,33 @@
                                            Foreground="{DynamicResource SecondaryTextBrush}"
                                            Text="Si varios eventos coinciden, las notificaciones se muestran en cola, una cada tantos segundos (1–60, por defecto 3)."
                                            TextWrapping="Wrap" />
+                                <CheckBox Margin="0,14,0,0"
+                                          VerticalAlignment="Center"
+                                          Content="Repetir la notificación de batería baja mientras siga baja"
+                                          IsChecked="{Binding Settings.BatteryNotifyRepeatEnabled, Mode=TwoWay}" />
+                                <TextBlock Margin="0,6,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="Activado: avisa cada minuto mientras la batería siga baja. Desactivado: avisa una sola vez hasta que la batería se recupere o se reinicie GDM."
+                                           TextWrapping="Wrap" />
+                                <TextBlock Margin="0,14,0,5"
+                                           FontSize="12"
+                                           Text="Eventos con notificación" />
+                                <ItemsControl ItemsSource="{Binding Settings.NotificationEventOptions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Margin="0,2,0,2"
+                                                      Content="{Binding Label}"
+                                                      FontSize="12"
+                                                      IsChecked="{Binding IsEnabled, Mode=TwoWay}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Margin="0,6,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="Desmarca un evento para que no aparezca su notificación. Los cambios se guardan al instante."
+                                           TextWrapping="Wrap" />
                                 <TextBlock Margin="0,18,0,0"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
                                            Text="El idioma disponible actualmente es Español."
@@ -1342,7 +1409,7 @@
                                 <TextBlock Margin="0,6,0,0"
                                            FontSize="11"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
-                                           Text="«Estándar» solo instala versiones con número de función mayor (0.16.x → 0.17.0). «Nightly» instala cualquier versión más reciente, incluidas las correcciones intermedias (0.16.0 → 0.16.5)."
+                                           Text="«Estándar» instala la última build publicada del canal. «Nightly» instala el último release publicado en GitHub, incluidas las compilaciones intermedias."
                                            TextWrapping="Wrap" />
                                 <Button Margin="0,16,0,0"
                                         HorizontalAlignment="Left"
@@ -1393,11 +1460,11 @@
                                         MinWidth="240"
                                         Padding="14,8"
                                         Command="{Binding Updates.ForceInstallLatestCommand}"
-                                        Content="Forzar instalación de la última versión" />
+                                        Content="Forzar instalación de la última build" />
                                 <TextBlock Margin="0,8,0,0"
                                            FontSize="11"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
-                                           Text="Descarga e instala el último release publicado en GitHub aunque sea la misma versión o no supere los criterios del canal. Solo para pruebas; GDM se cerrará y se reiniciará."
+                                           Text="Descarga e instala el último release publicado en GitHub aunque sea la misma build o no supere los criterios del canal. Solo para pruebas; GDM se cerrará y se reiniciará."
                                            TextWrapping="Wrap" />
                             </StackPanel>
                         </Grid>
@@ -1421,6 +1488,176 @@
                                Foreground="{DynamicResource SecondaryTextBrush}"
                                Text="{Binding Settings.StatusMessage}"
                                TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel Margin="0,2,0,0"
+                            Visibility="{Binding IsBluetoothSection, Converter={StaticResource BoolToVisibility}}">
+                    <Border Padding="18"
+                            Background="{DynamicResource PanelBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock FontSize="16"
+                                           FontWeight="SemiBold"
+                                           Text="Dispositivos Bluetooth" />
+                                <TextBlock Margin="12,0,0,0"
+                                           VerticalAlignment="Center"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="{Binding Bluetooth.BluetoothStatusText}" />
+                            </StackPanel>
+                            <CheckBox Margin="0,14,0,0"
+                                      VerticalAlignment="Center"
+                                      IsEnabled="{Binding Bluetooth.IsBluetoothAvailable}"
+                                      Content="Conectar mandos automáticamente"
+                                      IsChecked="{Binding Bluetooth.AutoConnectEnabled, Mode=TwoWay}"
+                                      ToolTip="Si un mando entra en modo emparejamiento, GDM lo empareja solo sin abrir los ajustes de Bluetooth de Windows." />
+                            <CheckBox Margin="0,8,0,0"
+                                      VerticalAlignment="Center"
+                                      IsEnabled="{Binding Bluetooth.IsBluetoothAvailable}"
+                                      Content="Reintentar emparejamiento cada 5 segundos"
+                                      IsChecked="{Binding Bluetooth.AutoPairLoopEnabled, Mode=TwoWay}"
+                                      ToolTip="Con la auto-conexión activa: desactivado hace un único intento por detección; activado reintenta cada 5 segundos hasta emparejar o hasta que el mando salga de la lista." />
+                            <CheckBox Margin="0,8,0,0"
+                                      VerticalAlignment="Center"
+                                      IsEnabled="{Binding Bluetooth.IsBluetoothAvailable}"
+                                      Content="Mostrar todos los dispositivos"
+                                      IsChecked="{Binding Bluetooth.ShowAllDevices, Mode=TwoWay}"
+                                      ToolTip="Por defecto solo se muestran mandos. Activa esto para ver cualquier dispositivo Bluetooth detectado." />
+                            <TextBlock Margin="0,8,0,0"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Text="La detección funciona mientras GDM esté abierto, aunque esté minimizado en la bandeja. Los mandos deben estar en modo emparejamiento para aparecer."
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <Border Margin="0,12,0,0"
+                            Padding="16"
+                            Background="{DynamicResource PanelRaisedBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Visibility="{Binding Bluetooth.ShowBluetoothUnavailable, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <TextBlock FontWeight="SemiBold"
+                                       Text="Bluetooth no disponible" />
+                            <TextBlock Margin="0,6,0,0"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Text="{Binding Bluetooth.UnavailableReasonText}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock Margin="0,4,0,0"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                       Text="Las funciones de esta pestaña (buscar, emparejar y auto-conexión) no pueden funcionar sin Bluetooth. Conecta o activa el adaptador Bluetooth de Windows y vuelve a esta pestaña."
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <StackPanel Margin="0,14,0,0"
+                                Orientation="Horizontal">
+                        <Button MinWidth="140"
+                                Padding="14,8"
+                                IsEnabled="{Binding Bluetooth.IsBluetoothAvailable}"
+                                Command="{Binding Bluetooth.RefreshCommand}"
+                                Content="Buscar dispositivos" />
+                        <Button MinWidth="190"
+                                Margin="10,0,0,0"
+                                Padding="14,8"
+                                Command="{Binding Bluetooth.OpenWindowsSettingsCommand}"
+                                Content="Abrir Bluetooth de Windows" />
+                    </StackPanel>
+                    <TextBlock Margin="0,10,0,0"
+                               FontSize="12"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="{Binding Bluetooth.StatusMessage}"
+                               TextWrapping="Wrap" />
+                    <ItemsControl Margin="0,10,0,0"
+                                  ItemsSource="{Binding Bluetooth.Devices}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="0,0,0,10"
+                                        Padding="14"
+                                        Background="{DynamicResource PanelBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock FontWeight="SemiBold"
+                                                           Text="{Binding Name}" />
+                                                <Border Margin="8,0,0,0"
+                                                        Padding="6,1"
+                                                        VerticalAlignment="Center"
+                                                        Background="{DynamicResource PanelRaisedBrush}"
+                                                        BorderBrush="{DynamicResource BorderBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Visibility="{Binding LooksLikeGamepad, Converter={StaticResource BoolToVisibility}}">
+                                                    <TextBlock FontSize="10"
+                                                               Text="Mando probable" />
+                                                </Border>
+                                                <Border Margin="6,0,0,0"
+                                                        Padding="6,1"
+                                                        VerticalAlignment="Center"
+                                                        Background="{DynamicResource PanelRaisedBrush}"
+                                                        BorderBrush="{DynamicResource BorderBrush}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4">
+                                                    <TextBlock FontSize="10"
+                                                               Text="{Binding TransportLabel}" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Margin="0,4,0,0"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Text="{Binding Address, TargetNullValue=Sin dirección}" />
+                                            <TextBlock Margin="0,2,0,0"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource SecondaryTextBrush}"
+                                                       Text="{Binding StatusText}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1"
+                                                    Orientation="Horizontal"
+                                                    VerticalAlignment="Center">
+                                            <Button Padding="12,5"
+                                                    MinWidth="110"
+                                                    IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
+                                                    Command="{Binding PairCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Content="{Binding ActionLabel}"
+                                                    Visibility="{Binding IsPaired, Converter={StaticResource InverseBoolToVisibility}}" />
+                                            <Button Padding="12,5"
+                                                    MinWidth="110"
+                                                    Margin="8,0,0,0"
+                                                    IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
+                                                    Command="{Binding UnpairCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Content="{Binding ActionLabel}"
+                                                    Visibility="{Binding IsPaired, Converter={StaticResource BoolToVisibility}}" />
+                                            <CheckBox Margin="10,0,0,0"
+                                                      VerticalAlignment="Center"
+                                                      FontSize="11"
+                                                      IsChecked="{Binding AutoConnectBlocked, Mode=TwoWay}"
+                                                      Content="No conectar automáticamente"
+                                                      ToolTip="Marcado: este dispositivo nunca se emparejará solo aunque el auto-emparejamiento esté activado. Sigue pudiendo emparejarse manualmente." />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Margin="0,10,0,0"
+                               FontSize="12"
+                               Foreground="{DynamicResource SecondaryTextBrush}"
+                               Text="{Binding Bluetooth.EmptyMessage}"
+                               TextWrapping="Wrap"
+                               Visibility="{Binding Bluetooth.ShowEmptyMessage, Converter={StaticResource BoolToVisibility}}" />
                 </StackPanel>
 
                 <StackPanel Margin="0,2,0,0"
@@ -1517,42 +1754,6 @@
                                 SelectedItem="{Binding Profiles.SelectedVirtualGamepad, Mode=TwoWay}"
                                 Background="Transparent"
                                 BorderThickness="0">
-                        <TabControl.Resources>
-                            <Style TargetType="TabItem">
-                                <Setter Property="Padding" Value="16,8" />
-                                <Setter Property="Margin" Value="0,0,8,0" />
-                                <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="TabItem">
-                                            <Border x:Name="TabBorder"
-                                                    Padding="{TemplateBinding Padding}"
-                                                    Background="{DynamicResource PanelBrush}"
-                                                    BorderBrush="{DynamicResource BorderBrush}"
-                                                    BorderThickness="1,1,1,0"
-                                                    CornerRadius="6,6,0,0">
-                                                <ContentPresenter ContentSource="Header"
-                                                                  HorizontalAlignment="Center" />
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsSelected" Value="True">
-                                                    <Setter TargetName="TabBorder"
-                                                            Property="Background"
-                                                            Value="{DynamicResource PanelRaisedBrush}" />
-                                                    <Setter Property="Foreground"
-                                                            Value="{DynamicResource PrimaryTextBrush}" />
-                                                </Trigger>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="TabBorder"
-                                                            Property="BorderBrush"
-                                                            Value="{DynamicResource AccentBrush}" />
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                            </Style>
-                        </TabControl.Resources>
                         <TabControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel>
@@ -1723,6 +1924,18 @@
                                                           DisplayMemberPath="Label"
                                                           SelectedValuePath="Value"
                                                           SelectedValue="{Binding VibrationState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                            <StackPanel Margin="0,0,14,8"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock FontSize="12"
+                                                           Text="Pulso al cargar" />
+                                                <ComboBox Width="170"
+                                                          Margin="0,4,0,0"
+                                                          HorizontalAlignment="Left"
+                                                          ItemsSource="{Binding TriStateOptions}"
+                                                          DisplayMemberPath="Label"
+                                                          SelectedValuePath="Value"
+                                                          SelectedValue="{Binding ProfileLoadVibrationState, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                             </StackPanel>
                                             <StackPanel Margin="0,0,14,8"
                                                         VerticalAlignment="Center">
@@ -2354,6 +2567,11 @@
                                                           IsChecked="{Binding VibrationEnabled, Mode=TwoWay}" />
                                                 <CheckBox Margin="0,8,0,0"
                                                           VerticalAlignment="Center"
+                                                          Content="Pulso de vibración al cargar el perfil"
+                                                          IsChecked="{Binding ProfileLoadVibrationEnabled, Mode=TwoWay}"
+                                                          ToolTip="Cada vez que la salida virtual arranca con el perfil aplicado (ajuste global o perfil creado), el mando físico vibra un instante para confirmar que cargó correctamente." />
+                                                <CheckBox Margin="0,8,0,0"
+                                                          VerticalAlignment="Center"
                                                           Content="Inicio automático de la salida virtual al conectar"
                                                           IsChecked="{Binding AutoStartVirtualGamepad, Mode=TwoWay}" />
                                                 <CheckBox Margin="0,8,0,0"
@@ -2440,42 +2658,6 @@
                                                                 BorderThickness="0"
                                                                 ItemsSource="{Binding DataContext.Profiles.ProfileEditorTabs, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                 SelectedItem="{Binding DataContext.Profiles.SelectedProfileTab, Mode=TwoWay, RelativeSource={RelativeSource AncestorType=Window}}">
-                                                        <TabControl.Resources>
-                                                            <Style TargetType="TabItem">
-                                                                <Setter Property="Padding" Value="16,8" />
-                                                                <Setter Property="Margin" Value="0,0,8,0" />
-                                                                <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
-                                                                <Setter Property="Template">
-                                                                    <Setter.Value>
-                                                                        <ControlTemplate TargetType="TabItem">
-                                                                            <Border x:Name="TabBorder"
-                                                                                    Padding="{TemplateBinding Padding}"
-                                                                                    Background="{DynamicResource PanelBrush}"
-                                                                                    BorderBrush="{DynamicResource BorderBrush}"
-                                                                                    BorderThickness="1,1,1,0"
-                                                                                    CornerRadius="6,6,0,0">
-                                                                                <ContentPresenter ContentSource="Header"
-                                                                                                  HorizontalAlignment="Center" />
-                                                                            </Border>
-                                                                            <ControlTemplate.Triggers>
-                                                                                <Trigger Property="IsSelected" Value="True">
-                                                                                    <Setter TargetName="TabBorder"
-                                                                                            Property="Background"
-                                                                                            Value="{DynamicResource PanelRaisedBrush}" />
-                                                                                    <Setter Property="Foreground"
-                                                                                            Value="{DynamicResource PrimaryTextBrush}" />
-                                                                                </Trigger>
-                                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                                    <Setter TargetName="TabBorder"
-                                                                                            Property="BorderBrush"
-                                                                                            Value="{DynamicResource AccentBrush}" />
-                                                                                </Trigger>
-                                                                            </ControlTemplate.Triggers>
-                                                                        </ControlTemplate>
-                                                                    </Setter.Value>
-                                                                </Setter>
-                                                            </Style>
-                                                        </TabControl.Resources>
                                                         <TabControl.ItemTemplate>
                                                             <DataTemplate>
                                                                 <TextBlock FontWeight="SemiBold"

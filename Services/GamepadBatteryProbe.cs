@@ -87,6 +87,23 @@ public static class GamepadBatteryProbe
     {
         GamepadBatteryLevel sdlLevel = MapSdlPowerLevel(ReadSdlPowerLevel(joystick));
 
+        // Xbox por Bluetooth: SDL3 es la fuente fiable (estado GIP del mando,
+        // niveles 1/25/50/100 + carga). XInput por BT es intermitente — a
+        // veces devuelve porcentaje fino y a veces «sin batería» — así que
+        // consultar XInput primero hacía alternar el valor mostrado entre
+        // sondeos. Se prefiere SDL3 y XInput queda como último recurso.
+        bool isBluetoothXbox =
+            device.VendorId == 0x045E &&
+            device.ConnectionTransport == GamepadConnectionTransport.Bluetooth;
+        if (isBluetoothXbox)
+        {
+            BatteryReading? btReading = TryReadSdl3PowerInfo(joystick);
+            if (btReading is { } btResult)
+            {
+                return btResult;
+            }
+        }
+
         // Xbox por XInput: porcentaje exacto (0-255) y tipo de batería/cable.
         if (device.VendorId == 0x045E && xinputUserIndex >= 0 &&
             XInputGetBatteryInformationNative((uint)xinputUserIndex, XInputDevTypeGamepad, out XInputBatteryInformation info) == 0)
@@ -95,6 +112,23 @@ public static class GamepadBatteryProbe
             bool disconnected = info.BatteryType == 0; // XINPUT_BATTERY_TYPE_DISCONNECTED
             bool wired = info.BatteryType == 1;        // XINPUT_BATTERY_TYPE_WIRED
             bool hasBattery = info.BatteryType is 2 or 3 or 4 or 5; // ALKALINE/NIMH/UNKNOWN/LITHIUM
+
+            // Por Bluetooth, XInput puede devolver «sin batería» o 0 % aunque
+            // el mando tenga carga: en ese caso se prefiere SDL3, que sí
+            // reporta el estado GIP real (niveles y carga).
+            bool xinputUnreliable =
+                device.ConnectionTransport == GamepadConnectionTransport.Bluetooth &&
+                (disconnected || (!wired && info.BatteryLevel == 0));
+            if (xinputUnreliable)
+            {
+                // Por Bluetooth ya se probó SDL3 al inicio de Probe.
+                return new BatteryReading(
+                    sdlLevel,
+                    null,
+                    false,
+                    sdlLevel == GamepadBatteryLevel.Wired,
+                    sdlLevel != GamepadBatteryLevel.Unknown);
+            }
 
             if (disconnected)
             {
@@ -122,6 +156,12 @@ public static class GamepadBatteryProbe
             return new BatteryReading(level, ds4Percent, ds4Charging, false, true);
         }
 
+        BatteryReading? sdl3 = TryReadSdl3PowerInfo(joystick);
+        if (sdl3 is { } sdl3Reading)
+        {
+            return sdl3Reading;
+        }
+
         return new BatteryReading(
             sdlLevel,
             null,
@@ -130,19 +170,63 @@ public static class GamepadBatteryProbe
             sdlLevel != GamepadBatteryLevel.Unknown);
     }
 
+    /// <summary>
+    /// Lee la información de energía vía SDL3 directamente. El handle SDL2 es
+    /// el mismo puntero SDL_Joystick de SDL3 (SDL2-compat no envuelve el
+    /// objeto), así que se puede llamar a SDL_GetJoystickPowerInfo, que
+    /// devuelve porcentaje real donde SDL2 solo expone un nivel grueso —
+    /// p. ej. mandos Xbox por Bluetooth vía GIP (1/25/50/100 + carga).
+    /// </summary>
+    private static BatteryReading? TryReadSdl3PowerInfo(IntPtr joystick)
+    {
+        try
+        {
+            int percent = -1;
+            int state = Sdl3GetJoystickPowerInfo(joystick, out percent);
+            // SDL_PowerState: ERROR=-1, UNKNOWN=0, ON_BATTERY=1,
+            // NO_BATTERY=2, CHARGING=3, CHARGED=4.
+            return state switch
+            {
+                2 => new BatteryReading(GamepadBatteryLevel.Wired, null, false, true, true),
+                3 or 4 => new BatteryReading(
+                    GamepadBatteryLevel.Charging,
+                    percent >= 0 ? percent : null,
+                    true,
+                    false,
+                    true),
+                1 when percent >= 0 => new BatteryReading(
+                    PercentToLevel(percent),
+                    percent,
+                    false,
+                    false,
+                    true),
+                _ => null
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static bool IsDs4ProductId(ushort? productId) =>
         productId is 0x05C4 or 0x09CC or 0x0BA0;
 
+    // Los niveles GIP del mando reportan 25% para «batería baja»: el corte en
+    // 30% hace que ese valor semántico caiga en Low y dispare la alerta.
     private static GamepadBatteryLevel PercentToLevel(int percent) => percent switch
     {
         <= 5 => GamepadBatteryLevel.Empty,
-        <= 20 => GamepadBatteryLevel.Low,
+        <= 30 => GamepadBatteryLevel.Low,
         <= 70 => GamepadBatteryLevel.Medium,
         _ => GamepadBatteryLevel.Full
     };
 
     [DllImport("SDL2", CallingConvention = CallingConvention.Cdecl, EntryPoint = "SDL_JoystickCurrentPowerLevel")]
     private static extern int SdlCurrentPowerLevel(IntPtr joystick);
+
+    [DllImport("SDL3", CallingConvention = CallingConvention.Cdecl, EntryPoint = "SDL_GetJoystickPowerInfo")]
+    private static extern int Sdl3GetJoystickPowerInfo(IntPtr joystick, out int percent);
 
     [DllImport("xinput1_4.dll", EntryPoint = "XInputGetState", CallingConvention = CallingConvention.Winapi)]
     private static extern uint XInputGetStateNative(uint dwUserIndex, out XInputState state);
@@ -176,6 +260,39 @@ public static class GamepadBatteryProbe
             catch { }
         }
         return slots;
+    }
+
+    /// <summary>
+    /// Devuelve el slot XInput del único mando inalámbrico con batería
+    /// reportando datos (tipos ALKALINE/NIMH/UNKNOWN/LITHIUM). Los mandos
+    /// virtuales y los conectados por cable reportan WIRED/DISCONNECTED y
+    /// quedan excluidos, así que funciona aunque haya salidas virtuales
+    /// activas ocupando slots XInput. -1 si no hay exactamente uno.
+    /// </summary>
+    public static int FindSingleBatteryXInputSlot()
+    {
+        int found = -1;
+        int candidates = 0;
+        for (uint i = 0; i < 4; i++)
+        {
+            try
+            {
+                if (XInputGetStateNative(i, out _) != 0 ||
+                    XInputGetBatteryInformationNative(i, XInputDevTypeGamepad, out XInputBatteryInformation info) != 0)
+                {
+                    continue;
+                }
+
+                if (info.BatteryType is >= 2 and <= 5)
+                {
+                    found = (int)i;
+                    candidates++;
+                }
+            }
+            catch { }
+        }
+
+        return candidates == 1 ? found : -1;
     }
     private static int ReadSdlPowerLevel(IntPtr joystick)
     {

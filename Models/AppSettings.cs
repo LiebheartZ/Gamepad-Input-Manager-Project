@@ -22,6 +22,12 @@ public sealed record AppSettings
     public bool ShowExitConfirmation { get; init; } = true;
     public string NotificationMode { get; init; } = NotificationModes.Always;
     public double NotificationQueueIntervalSeconds { get; init; } = 3;
+    public bool BatteryNotifyRepeatEnabled { get; init; } = true;
+    public Dictionary<string, bool> NotificationEventStates { get; init; } = [];
+    public bool BluetoothAutoConnect { get; init; }
+    public bool BluetoothAutoPairLoop { get; init; }
+    public bool BluetoothShowAllDevices { get; init; }
+    public List<string> BluetoothAutoConnectExcluded { get; init; } = [];
     public double WindowWidth { get; init; } = 800;
     public double WindowHeight { get; init; } = 600;
 }

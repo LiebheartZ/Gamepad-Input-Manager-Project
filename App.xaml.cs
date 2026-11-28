@@ -33,6 +33,16 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
+        // Modo helper de emparejamiento Bluetooth: GDM.Pair.exe corre sin
+        // privilegios (lanzado vía explorer.exe) porque PairAsync falla en
+        // procesos elevados en algunos equipos (Windows 10).
+        if (GDM.Services.BluetoothPairHelper.IsPairHelperProcess)
+        {
+            int pairExitCode = await GDM.Services.BluetoothPairHelper.RunAsync();
+            Shutdown(pairExitCode);
+            return;
+        }
+
         // Modo helper: cuando el ejecutable corre como GDM.Notify.exe (hardlink
         // lanzado por explorer.exe desde la instancia elevada), muestra los
         // toasts pendientes y sale. Se procesa antes del coordinador de
@@ -107,6 +117,7 @@ public partial class App : System.Windows.Application
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         logService.Write(DiagnosticLogLevel.Information, "GDM", "Inicio de la aplicación.");
+        ToastNotificationService.CleanupStalePendingToasts();
         _ = _singleInstanceCoordinator.StartListeningAsync(
             ActivatePrimaryWindow,
             exception => logService.Write(

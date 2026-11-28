@@ -1,5 +1,5 @@
 ﻿GDM
-0.1.8.0
+283.0.0.0
 
 winexe
 C#
@@ -12,7 +12,7 @@ TRACE;RELEASE;NET;NET10_0;NETCOREAPP;WINDOWS;WINDOWS10_0_19041_0;NET5_0_OR_GREAT
 C:\proyectos\input manager proyecto\App.xaml
 21720085176
 
-73469704596
+80-870699514
 219173326173
 Views\MainWindow.xaml;Views\ProfileEditorView.xaml;
 

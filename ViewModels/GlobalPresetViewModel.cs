@@ -272,6 +272,12 @@ public sealed class GlobalPresetViewModel : INotifyPropertyChanged
         set => MutateSettings(s => s with { IgnoreExternalColorSignals = value });
     }
 
+    public bool ProfileLoadVibrationEnabled
+    {
+        get => Settings.ProfileLoadVibrationEnabled;
+        set => MutateSettings(s => s with { ProfileLoadVibrationEnabled = value });
+    }
+
     public int UnsavedDevicesMode
     {
         get => (int)_draft.UnsavedDevices;
@@ -493,6 +499,7 @@ public sealed class GlobalPresetViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(BatteryNotifyEnabled));
         OnPropertyChanged(nameof(BatterySoundEnabled));
         OnPropertyChanged(nameof(IgnoreExternalColorSignals));
+        OnPropertyChanged(nameof(ProfileLoadVibrationEnabled));
         OnPropertyChanged(nameof(UnsavedDevicesMode));
         OnPropertyChanged(nameof(SaveComboEnabled));
         OnPropertyChanged(nameof(SaveComboHoldSeconds));

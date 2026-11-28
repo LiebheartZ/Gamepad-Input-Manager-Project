@@ -5,7 +5,7 @@
   },
   "projects": {
     "C:\\proyectos\\input manager proyecto\\GDM.csproj": {
-      "version": "0.1.8",
+      "version": "286.0.0",
       "restore": {
         "projectUniqueName": "C:\\proyectos\\input manager proyecto\\GDM.csproj",
         "projectName": "GDM",
@@ -374,6 +374,11 @@
             "System.Xml.XPath": "(,4.3.32767]",
             "System.Xml.XPath.XDocument": "(,5.0.32767]"
           }
+        }
+      },
+      "runtimes": {
+        "win-x64": {
+          "#import": []
         }
       }
     }

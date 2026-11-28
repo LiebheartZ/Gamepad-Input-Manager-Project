@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Globalization;
 using System.IO;
@@ -34,6 +35,9 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     private readonly Dictionary<string, SonyLedApplyResult> _lastLedResults = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (byte Red, byte Green, byte Blue, byte Brightness, int? Player)> _lastLedWrites =
         new(StringComparer.Ordinal);
+
+    /// <summary>Se dispara cuando cambia el color LED aplicado a un mando.</summary>
+    public event Action<string, byte, byte, byte>? LedColorChanged;
     private long _lastRumbleForwardLogMs;
     private readonly Dictionary<string, RumbleHoldState> _rumbleHoldStates = new(StringComparer.Ordinal);
     private System.Windows.Threading.DispatcherTimer? _rumbleHoldTimer;
@@ -53,6 +57,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     private readonly Dictionary<string, long> _batteryAlertNotifyMs = new(StringComparer.Ordinal);
     private System.Windows.Threading.DispatcherTimer? _batteryEffectTimer;
     private System.Windows.Threading.DispatcherTimer? _ledGuardTimer;
+    private readonly System.Windows.Threading.DispatcherTimer _ledRefreshTimer;
     private const long BatteryReadIntervalMs = 1000;
     private const long BatteryNotifyRepeatMs = 60000;
     private sealed record RumbleHoldState(int Low, int High, long LastEventMs);
@@ -90,6 +95,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     private ControllerRecord? _editingDeviceRecord;
     private string _draftName = string.Empty;
     private string _draftDescription = string.Empty;
+    private bool _draftDirty;
     private string _draftVirtualGamepadType = VirtualGamepadTypes.Default;
     private readonly Dictionary<string, ControllerProfileMapping> _typeMappingDrafts =
         new(StringComparer.Ordinal);
@@ -105,7 +111,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     private readonly IGlobalPresetRepository? _globalPresetRepository;
     private GlobalPreset _globalPreset = GlobalPreset.Default;
     private readonly Func<ConnectedGamepad, Task<bool>>? _saveUnsavedController;
-    private readonly Action<string, string[]>? _notifyEvent;
+    private readonly Action<string, string, string[]>? _notifyEvent;
+    private readonly Func<bool>? _batteryNotifyRepeatEnabled;
 
     private sealed record EffectiveSettingsCacheEntry(
         GlobalPreset Preset,
@@ -170,6 +177,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             if (SetProperty(ref _draftName, value))
             {
                 _saveCommand.NotifyCanExecuteChanged();
+                MarkDraftDirty();
             }
         }
     }
@@ -177,7 +185,13 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     public string DraftDescription
     {
         get => _draftDescription;
-        set => SetProperty(ref _draftDescription, value);
+        set
+        {
+            if (SetProperty(ref _draftDescription, value))
+            {
+                MarkDraftDirty();
+            }
+        }
     }
 
     public string DraftVirtualGamepadType
@@ -200,6 +214,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 CaptureMappingDraft(previousType);
                 LoadControlMappingRows(GetMappingDraft(SelectedProfile, value));
                 RefreshComboTargetButtons();
+                MarkDraftDirty();
             }
 
             OnPropertyChanged(nameof(DraftVirtualGamepadTypeName));
@@ -214,13 +229,25 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
     public double LeftStickDeadZone
     {
         get => _leftStickDeadZone;
-        set => SetProperty(ref _leftStickDeadZone, Math.Clamp(value, 0d, 0.5d));
+        set
+        {
+            if (SetProperty(ref _leftStickDeadZone, Math.Clamp(value, 0d, 0.5d)))
+            {
+                MarkDraftDirty();
+            }
+        }
     }
 
     public double RightStickDeadZone
     {
         get => _rightStickDeadZone;
-        set => SetProperty(ref _rightStickDeadZone, Math.Clamp(value, 0d, 0.5d));
+        set
+        {
+            if (SetProperty(ref _rightStickDeadZone, Math.Clamp(value, 0d, 0.5d)))
+            {
+                MarkDraftDirty();
+            }
+        }
     }
 
     public string StatusMessage
@@ -262,8 +289,17 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 _isLoadingProfileDraft = false;
             }
 
-            _typeMappingDrafts.Clear();
-            LoadMappingRows(value);
+            _isLoadingProfileDraft = true;
+            try
+            {
+                _typeMappingDrafts.Clear();
+                LoadMappingRows(value);
+            }
+            finally
+            {
+                _isLoadingProfileDraft = false;
+                _draftDirty = false;
+            }
             if (value is not null && ProfileEditorTabs.Contains(value))
             {
                 _selectedProfileTab = value;
@@ -281,13 +317,65 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         get => _selectedProfileTab;
         set
         {
-            if (value is not null)
+            if (value is null || IsSameProfile(value, _selectedProfileTab))
             {
-                _selectedProfileTab = value;
-                OnPropertyChanged();
-                SelectedProfile = value;
+                return;
+            }
+
+            // Con cambios sin guardar se pide confirmación antes de salir
+            // del perfil en edición; la pestaña se revierte si se cancela.
+            if (_draftDirty)
+            {
+                _ = ConfirmProfileTabSwitchAsync(value);
+                return;
+            }
+
+            CommitProfileTabSelection(value);
+        }
+    }
+
+    private static bool IsSameProfile(ControllerProfile? a, ControllerProfile? b) =>
+        a is null || b is null ? ReferenceEquals(a, b) : a.ProfileId == b.ProfileId;
+
+    private void CommitProfileTabSelection(ControllerProfile value)
+    {
+        _selectedProfileTab = value;
+        OnPropertyChanged();
+        SelectedProfile = value;
+    }
+
+    private async Task ConfirmProfileTabSwitchAsync(ControllerProfile target)
+    {
+        System.Windows.MessageBoxResult choice = System.Windows.MessageBox.Show(
+            System.Windows.Application.Current?.MainWindow,
+            "Hay cambios sin guardar en el perfil actual.\n\n" +
+            "Sí = guardar y cambiar de perfil\n" +
+            "No = descartar los cambios\n" +
+            "Cancelar = quedarse en este perfil",
+            "Cambios sin guardar",
+            System.Windows.MessageBoxButton.YesNoCancel,
+            System.Windows.MessageBoxImage.Question);
+
+        if (choice == System.Windows.MessageBoxResult.Cancel)
+        {
+            // El TabControl ya seleccionó visualmente la otra pestaña;
+            // se vuelve a empujar la actual para revertir el resaltado.
+            OnPropertyChanged(nameof(SelectedProfileTab));
+            return;
+        }
+
+        if (choice == System.Windows.MessageBoxResult.Yes)
+        {
+            await SaveAsync();
+            if (_draftDirty)
+            {
+                // El guardado falló: se permanece en la pestaña actual.
+                OnPropertyChanged(nameof(SelectedProfileTab));
+                return;
             }
         }
+
+        CommitProfileTabSelection(target);
     }
 
     public ControllerRecord? SelectedController
@@ -421,7 +509,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         Func<ConnectedGamepad, bool>? isDeviceHiddenByGdm = null,
         IGlobalPresetRepository? globalPresetRepository = null,
         Func<ConnectedGamepad, Task<bool>>? saveUnsavedController = null,
-        Action<string, string[]>? notifyEvent = null)
+        Action<string, string, string[]>? notifyEvent = null,
+        Func<bool>? batteryNotifyRepeatEnabled = null)
     {
         _profileRepository = profileRepository;
         _controllerRepository = controllerRepository;
@@ -439,6 +528,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         _globalPresetRepository = globalPresetRepository;
         _saveUnsavedController = saveUnsavedController;
         _notifyEvent = notifyEvent;
+        _batteryNotifyRepeatEnabled = batteryNotifyRepeatEnabled;
         _defaultVirtualGamepadType = defaultVirtualGamepadType;
         _ledService = ledService;
         _powerOffService = powerOffService;
@@ -448,6 +538,9 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         {
             _virtualGamepadService.RumbleReceived += OnVirtualRumbleOutput;
         }
+        ButtonMappingRows.CollectionChanged += OnDraftRowsCollectionChanged;
+        AxisMappingRows.CollectionChanged += OnDraftRowsCollectionChanged;
+        ComboRows.CollectionChanged += OnDraftRowsCollectionChanged;
         _createCommand = new AsyncCommand(CreateAsync, () =>
             CanEditProfiles && !IsEditingDeviceProfile, ReportCommandFailure);
         _saveCommand = new AsyncCommand(SaveAsync, () =>
@@ -470,14 +563,16 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             ReportCommandFailure);
         AddComboCommand = new ParameterCommand(_ =>
         {
-            ComboRows.Add(new ProfileComboRow(
+            ProfileComboRow row = new(
                 Guid.NewGuid(),
                 string.Empty,
                 [],
                 requiresHold: false,
                 holdMilliseconds: 0,
                 ComboActionTypes.Buttons,
-                []));
+                []);
+            row.PropertyChanged += OnDraftRowPropertyChanged;
+            ComboRows.Add(row);
         });
         RemoveComboCommand = new ParameterCommand(parameter =>
         {
@@ -486,6 +581,27 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 ComboRows.Remove(row);
             }
         });
+        // Watchdog de LED: re-afirma el estado cada 20 s. Las cachés de
+        // deduplicación (_lastLedWrites / _lastApplied) impiden reenviar el
+        // mismo color, pero el mando puede perder el estado (reconexión,
+        // suspensión, paquete descartado) y quedar con el LED apagado.
+        _ledRefreshTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(20)
+        };
+        _ledRefreshTimer.Tick += (_, _) =>
+        {
+            foreach (VirtualGamepadControllerViewModel item in VirtualGamepads.ToArray())
+            {
+                ConnectedGamepad? device = item.ConnectedDevice;
+                if (device?.DevicePath is not null &&
+                    SonyControllerLedSupport.TryGetKind(device.VendorId, device.ProductId, out _))
+                {
+                    _ = ApplyLedStateAsync(item, forceRefresh: true);
+                }
+            }
+        };
+        _ledRefreshTimer.Start();
         RebuildAssignmentChoices();
     }
 
@@ -870,6 +986,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
 
             bool saved = await _saveUnsavedController(device);
             _notifyEvent?.Invoke(
+                NotificationEvents.ControllerSaved,
                 saved ? "Mando guardado" : "No se pudo guardar el mando",
                 [saved
                     ? $"«{device.Name}» se registró como mando guardado."
@@ -1099,13 +1216,11 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
 
             RebuildProfileEditorTabs();
             RebuildAssignmentChoices();
-            if (!string.Equals(
-                    selected.VirtualGamepadType,
-                    updated.VirtualGamepadType,
-                    StringComparison.Ordinal))
-            {
-                await RestartVirtualGamepadsForProfileAsync(updated.ProfileId);
-            }
+            // Cualquier cambio guardado (mapeos, combos, tipo, deadzones)
+            // debe aplicarse ya: se reinician las salidas que usan este
+            // perfil aunque el tipo de mando virtual no haya cambiado.
+            await RestartVirtualGamepadsForProfileAsync(updated.ProfileId);
+            _draftDirty = false;
 
             StatusMessage = "Perfil guardado.";
         }
@@ -1197,21 +1312,12 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
 
             VirtualGamepadControllerViewModel? output = VirtualGamepads.FirstOrDefault(
                 candidate => candidate.Record.ControllerId == updatedRecord.ControllerId);
-            if (output?.ConnectedDevice is { } assignedDevice &&
-                _virtualGamepadService?.IsRunningFor(assignedDevice.DeviceKey) == true)
+            if (output is not null)
             {
-                string? runningType = _virtualGamepadService
-                    .GetRunningVirtualGamepadType(assignedDevice.DeviceKey);
-                if (runningType is not null &&
-                    !string.Equals(
-                        runningType,
-                        ResolveVirtualGamepadType(updatedRecord),
-                        StringComparison.Ordinal))
-                {
-                    await RestartVirtualGamepadIfRunningAsync(output);
-                }
+                await RestartVirtualGamepadIfRunningAsync(output);
             }
 
+            _draftDirty = false;
             StatusMessage = "Perfil por mando guardado.";
         }
         catch (InvalidDataException exception)
@@ -1278,13 +1384,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             }
 
             RebuildAssignmentChoices();
-            if (!string.Equals(
-                    selected.VirtualGamepadType,
-                    updated.VirtualGamepadType,
-                    StringComparison.Ordinal))
-            {
-                await RestartVirtualGamepadsForProfileAsync(updated.ProfileId);
-            }
+            await RestartVirtualGamepadsForProfileAsync(updated.ProfileId);
+            _draftDirty = false;
 
             StatusMessage = restoreFactory
                 ? "Ajuste global restaurado a los valores de fábrica."
@@ -1354,21 +1455,12 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
 
             VirtualGamepadControllerViewModel? output = VirtualGamepads.FirstOrDefault(
                 candidate => candidate.Record.ControllerId == updatedRecord.ControllerId);
-            if (output?.ConnectedDevice is { } assignedDevice &&
-                _virtualGamepadService?.IsRunningFor(assignedDevice.DeviceKey) == true)
+            if (output is not null)
             {
-                string? runningType = _virtualGamepadService
-                    .GetRunningVirtualGamepadType(assignedDevice.DeviceKey);
-                string desiredType = VirtualGamepadTypes.IsSupported(deviceProfile.VirtualGamepadType)
-                    ? deviceProfile.VirtualGamepadType
-                    : ResolveVirtualGamepadType(updatedRecord);
-                if (runningType is not null &&
-                    !string.Equals(runningType, desiredType, StringComparison.Ordinal))
-                {
-                    await RestartVirtualGamepadIfRunningAsync(output);
-                }
+                await RestartVirtualGamepadIfRunningAsync(output);
             }
 
+            _draftDirty = false;
             StatusMessage = "Perfil por mando restaurado desde «Ajuste global».";
         }
         catch (InvalidDataException exception)
@@ -1742,8 +1834,27 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         }
     }
 
+    private void MarkDraftDirty()
+    {
+        if (!_isLoadingProfileDraft)
+        {
+            _draftDirty = true;
+        }
+    }
+
+    private void OnDraftRowsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+        MarkDraftDirty();
+
+    private void OnDraftRowPropertyChanged(object? sender, PropertyChangedEventArgs e) =>
+        MarkDraftDirty();
+
     private void RebuildProfileEditorTabs()
     {
+        // La selección se captura por id antes de reconstruir: el TabControl
+        // (binding TwoWay) puede reasignar la primera pestaña («Ajuste
+        // global») durante el Clear/Add y hay que poder restaurarla.
+        Guid? keepProfileId = _selectedProfile?.ProfileId;
+
         ProfileEditorTabs.Clear();
         ControllerProfile? global = Profiles.FirstOrDefault(ControllerProfile.IsGlobalPreset);
         if (global is not null)
@@ -1759,11 +1870,53 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             }
         }
 
-        _selectedProfileTab = _selectedProfile is not null &&
-            ProfileEditorTabs.Contains(_selectedProfile)
-                ? _selectedProfile
-                : ProfileEditorTabs.FirstOrDefault();
+        ControllerProfile? selected = keepProfileId is { } id
+            ? ProfileEditorTabs.FirstOrDefault(tab => tab.ProfileId == id)
+            : null;
+        _selectedProfileTab = selected ?? ProfileEditorTabs.FirstOrDefault();
         OnPropertyChanged(nameof(SelectedProfileTab));
+
+        // Si el pushback del binding pisó SelectedProfile durante el
+        // rebuild, se restaura el perfil que se estaba editando.
+        if (selected is not null && _selectedProfile?.ProfileId != selected.ProfileId)
+        {
+            SelectedProfile = selected;
+        }
+        else if (selected is null && _selectedProfile is not null)
+        {
+            SelectedProfile = ProfileEditorTabs.FirstOrDefault();
+        }
+
+        // Reafirmación diferida por si el TabControl sigue empujando la
+        // primera pestaña después de que la UI se asiente.
+        Guid? intendedId = (selected ?? ProfileEditorTabs.FirstOrDefault())?.ProfileId;
+        if (intendedId is { } intended && System.Windows.Application.Current is not null)
+        {
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(
+                () => RestoreProfileTabSelection(intended),
+                System.Windows.Threading.DispatcherPriority.Background);
+        }
+    }
+
+    private void RestoreProfileTabSelection(Guid profileId)
+    {
+        ControllerProfile? tab = ProfileEditorTabs.FirstOrDefault(
+            candidate => candidate.ProfileId == profileId);
+        if (tab is null)
+        {
+            return;
+        }
+
+        if (_selectedProfileTab?.ProfileId != profileId)
+        {
+            _selectedProfileTab = tab;
+            OnPropertyChanged(nameof(SelectedProfileTab));
+        }
+
+        if (_selectedProfile?.ProfileId != profileId)
+        {
+            SelectedProfile = tab;
+        }
     }
 
     private void RebuildAssignmentChoices()
@@ -1846,14 +1999,16 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         ComboRows.Clear();
         foreach (ControllerCombo combo in profile?.Combos ?? [])
         {
-            ComboRows.Add(new ProfileComboRow(
+            ProfileComboRow row = new(
                 combo.ComboId,
                 combo.DisplayName,
                 combo.Buttons,
                 combo.RequiresHold,
                 combo.HoldMilliseconds,
                 combo.ActionType,
-                combo.TargetButtons));
+                combo.TargetButtons);
+            row.PropertyChanged += OnDraftRowPropertyChanged;
+            ComboRows.Add(row);
         }
 
         RefreshComboTargetButtons();
@@ -1867,10 +2022,12 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             string target = mapping?.ButtonMappings.TryGetValue(source.Id, out string? mappedTarget) == true
                 ? NormalizeButtonTarget(mappedTarget, source.Id)
                 : source.Id;
-            ButtonMappingRows.Add(new ProfileMappingRow(
+            ProfileMappingRow row = new(
                 source,
                 GamepadControlCatalog.GetButtonTargetsFor(DraftVirtualGamepadType),
-                target));
+                target);
+            row.PropertyChanged += OnDraftRowPropertyChanged;
+            ButtonMappingRows.Add(row);
         }
 
         AxisMappingRows.Clear();
@@ -1879,12 +2036,14 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             string target = mapping?.AxisMappings.TryGetValue(source.Id, out string? mappedTarget) == true
                 ? NormalizeAxisTarget(mappedTarget, source.Id)
                     : source.Id;
-            AxisMappingRows.Add(new ProfileMappingRow(
+            ProfileMappingRow row = new(
                 source,
-                GamepadControlCatalog.Axes,
+                GamepadControlCatalog.AxisTargets,
                 target,
                 mapping?.AxisInversions.TryGetValue(source.Id, out bool isInverted) == true &&
-                    isInverted));
+                    isInverted);
+            row.PropertyChanged += OnDraftRowPropertyChanged;
+            AxisMappingRows.Add(row);
         }
 
         LeftStickDeadZone = mapping?.DeadZones.GetValueOrDefault("leftStick") ?? 0d;
@@ -2067,7 +2226,8 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             "RT" => "rightTrigger",
             _ => target
         };
-        return GamepadControlCatalog.Axes.Any(axis => axis.Id == normalized)
+        return normalized == GamepadControlCatalog.NoButtonTarget.Id ||
+               GamepadControlCatalog.Axes.Any(axis => axis.Id == normalized)
             ? normalized
             : sourceId;
     }
@@ -2676,6 +2836,21 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 $"mapeoEstandar={snapshot.IsStandardGameController}; ejes={snapshot.Axes.Count}; botones={snapshot.Buttons.Count}.");
             item.SetStatus(
                 $"Mando virtual {VirtualGamepadTypes.DisplayName(virtualGamepadType)} activo.");
+            if (XInputExposure.IsLikelyXInput(device.VendorId))
+            {
+                // HidHide no puede ocultar la interfaz XInput del mando
+                // físico: juegos como EA SPORTS FC leen ambos dispositivos
+                // y duplican/spamean las entradas.
+                item.SetStatus(
+                    $"Mando virtual {VirtualGamepadTypes.DisplayName(virtualGamepadType)} activo. " +
+                    "Aviso: este mando físico también es visible por XInput y no puede ocultarse; " +
+                    "juegos como EA FC pueden detectar doble entrada.");
+                WriteAutoHideDiagnostic(
+                    DiagnosticLogLevel.Warning,
+                    $"El mando físico expone XInput: la salida virtual puede duplicar la entrada en juegos que lean ambas APIs. " +
+                    $"Controlador={item.Record.ControllerId}; mando={DescribeDevice(device)}.");
+            }
+
             item.Update(
                 item.Record,
                 device,
@@ -2684,6 +2859,13 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 virtualGamepadType);
             NotifyVirtualOutputStateChanged();
             NotifyVirtualGamepadStarted(device, virtualGamepadType, profile);
+            if (EffectiveSettings(item.Record).ProfileLoadVibrationEnabled)
+            {
+                // Pulso de confirmación en el mando físico: el perfil ya
+                // está aplicado a la salida virtual.
+                _ = _inputService.RumbleAsync(device.DeviceKey, 50000, 50000, 250);
+            }
+
             await TryAutoHidePhysicalDeviceAsync(item, device);
             _ = ApplyLedStateAsync(item);
         }
@@ -2972,14 +3154,16 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 {
                     item.SetStatus($"Combo «{combo.DisplayName}»: se detuvo la salida virtual.");
                     await StopVirtualGamepadNotifyingAsync(item);
+                    virtualOutputActive = false;
                 }
                 else
                 {
                     item.SetStatus($"Combo «{combo.DisplayName}»: se reactivó la salida virtual.");
                     await StartVirtualGamepadAsync(item);
+                    virtualOutputActive = true;
                 }
 
-                return;
+                continue;
             }
 
             if (combo.ActionType == ComboActionTypes.SwitchType)
@@ -2992,19 +3176,19 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 {
                     await SwitchVirtualGamepadTypeForNextStartAsync(item, device, combo);
                 }
-                return;
+                continue;
             }
 
             if (combo.ActionType == ComboActionTypes.PowerOff)
             {
                 await PowerOffControllerCoreAsync(item, device, $"combo «{combo.DisplayName}»");
-                return;
+                continue;
             }
 
             if (combo.ActionType == ComboActionTypes.ShowInfo)
             {
                 ShowControllerInfoNotification(item, device, profile, combo);
-                return;
+                continue;
             }
         }
     }
@@ -3020,38 +3204,32 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         ControllerProfile? profile,
         ControllerCombo combo)
     {
+        // Los toasts de Windows tienen altura limitada y recortan el texto
+        // que no cabe, así que los datos se compactan: fabricante + IDs de
+        // hardware en una línea y la batería (que ya incluye el transporte)
+        // aparte. Perfil y tipo virtual van primero por ser lo más relevante.
+        string manufacturerLine = string.Equals(
+            device.ManufacturerLabel,
+            device.HardwareIdLabel,
+            StringComparison.Ordinal)
+            ? $"Fabricante: {device.ManufacturerLabel}"
+            : $"Fabricante: {device.ManufacturerLabel} · {device.HardwareIdLabel}";
         var lines = new List<string>
         {
-            $"Mando: {device.Name}",
-            $"Fabricante: {device.ManufacturerLabel}",
-            $"Hardware: {device.HardwareIdLabel}"
+            manufacturerLine,
+            $"Perfil: {profile?.DisplayName ?? "Perfil por mando"}",
+            $"Tipo virtual: {VirtualGamepadTypes.DisplayName(ResolveVirtualGamepadType(item.Record))}"
         };
 
-        if (!string.IsNullOrWhiteSpace(device.SerialNumber) &&
-            !string.Equals(device.SerialNumber, "(n/d)", StringComparison.OrdinalIgnoreCase))
-        {
-            lines.Add($"Serie: {device.SerialNumber}");
-        }
+        // BatteryInfoText ya incluye el transporte («Batería: 80% · USB»);
+        // si no hay datos de batería se muestra solo la conexión.
+        lines.Add(device.HasBatteryInfo
+            ? device.BatteryInfoText
+            : device.ConnectionTransportText is { } transport
+                ? $"Conexión: {transport}"
+                : "Conexión: desconocida");
 
-        if (device.ConnectionTransportText is { } transport)
-        {
-            lines.Add($"Conexión: {transport}");
-        }
-
-        if (device.HasBatteryInfo)
-        {
-            lines.Add(device.BatteryInfoText);
-        }
-
-        lines.Add($"Perfil: {profile?.DisplayName ?? "Perfil por mando"}");
-        lines.Add(
-            $"Tipo virtual: {VirtualGamepadTypes.DisplayName(ResolveVirtualGamepadType(item.Record))}");
-        if (device.IsHiddenByGdm)
-        {
-            lines.Add("Estado: oculto por GDM");
-        }
-
-        _notifyEvent?.Invoke(device.Name, [.. lines]);
+        _notifyEvent?.Invoke(NotificationEvents.ControllerInfo, device.Name, [.. lines]);
         item.SetStatus($"Combo «{combo.DisplayName}»: información del mando mostrada.");
         WriteAutoHideDiagnostic(
             DiagnosticLogLevel.Information,
@@ -3101,6 +3279,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 newType);
             NotifyVirtualOutputStateChanged();
             _notifyEvent?.Invoke(
+                NotificationEvents.VirtualTypeChanged,
                 "Tipo de mando virtual cambiado",
                 [$"{device.Name}: {VirtualGamepadTypes.DisplayName(currentType)} → {VirtualGamepadTypes.DisplayName(newType)}",
                  $"Perfil: {profile?.DisplayName ?? "Perfil por mando"}"]);
@@ -3181,6 +3360,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 newType);
             NotifyVirtualOutputStateChanged();
             _notifyEvent?.Invoke(
+                NotificationEvents.VirtualTypeChanged,
                 "Tipo de mando virtual (próximo inicio)",
                 [$"{device.Name}: {VirtualGamepadTypes.DisplayName(currentType)} → {VirtualGamepadTypes.DisplayName(newType)}",
                  $"Perfil: {item.ProfileName}"]);
@@ -3985,7 +4165,9 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task ApplyLedStateAsync(VirtualGamepadControllerViewModel item)
+    private async Task ApplyLedStateAsync(
+        VirtualGamepadControllerViewModel item,
+        bool forceRefresh = false)
     {
         ISonyControllerLedService? service = _ledService;
         ConnectedGamepad? device = item.ConnectedDevice;
@@ -4076,8 +4258,10 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             }
         }
         var desiredLed = (red, green, blue, brightness, playerNumber);
-        if (_lastLedWrites.TryGetValue(device.DeviceKey, out var lastWrite) &&
-            lastWrite == desiredLed)
+        bool ledChanged =
+            !_lastLedWrites.TryGetValue(device.DeviceKey, out var lastWrite) ||
+            lastWrite != desiredLed;
+        if (!forceRefresh && !ledChanged)
         {
             return;
         }
@@ -4090,10 +4274,15 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
                 green,
                 blue,
                 brightness,
-                playerNumber);
+                playerNumber,
+                forceRefresh);
             if (result != SonyLedApplyResult.Failed)
             {
                 _lastLedWrites[device.DeviceKey] = desiredLed;
+                if (ledChanged)
+                {
+                    LedColorChanged?.Invoke(device.DeviceKey, red, green, blue);
+                }
             }
 
             if (_lastLedResults.GetValueOrDefault(device.DeviceKey) != result)
@@ -4533,7 +4722,11 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
         ConnectedGamepad device,
         GamepadBatteryLevel level)
     {
-        ControllerSettings settings = EffectiveSettings(item.Record);
+        if (!(_batteryNotifyRepeatEnabled?.Invoke() ?? true))
+        {
+            return;
+        }
+
         long now = Environment.TickCount64;
         if (_batteryAlertNotifyMs.TryGetValue(device.DeviceKey, out long last) &&
             now - last < BatteryNotifyRepeatMs)
@@ -4556,6 +4749,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             item.SetStatus(
                 $"Batería {ConnectedGamepad.BatteryLevelDisplayName(level).ToLowerInvariant()}: conecta el cargador.");
             _notifyEvent?.Invoke(
+                NotificationEvents.LowBattery,
                 $"Baja batería · {device.Name}",
                 [device.BatteryInfoText, "Conecta el cargador para evitar que se apague."]);
         }
@@ -4755,6 +4949,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             },
             "ignoreExternal" => current with { IgnoreExternalColorSignals = null },
             "keepHidden" => current with { KeepHiddenOnExit = null },
+            "profileVibration" => current with { ProfileLoadVibrationEnabled = null },
             "virtualType" => current with { VirtualGamepadType = null },
             "restartDevice" => current with { RestartPhysicalDeviceOnVirtualStart = null },
             _ => null
@@ -4802,6 +4997,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             "keepHidden" => current with { KeepHiddenOnExit = value },
             "ledColorIntensity" => current with { LedEffectColorIntensity = value },
             "restartDevice" => current with { RestartPhysicalDeviceOnVirtualStart = value },
+            "profileVibration" => current with { ProfileLoadVibrationEnabled = value },
             _ => current
         };
         if (updated == current)
@@ -5079,7 +5275,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             lines.Add($"Apagar el mando: {FormatComboButtons(powerOffCombo)}");
         }
 
-        _notifyEvent?.Invoke("Mando virtual encendido", [.. lines]);
+        _notifyEvent?.Invoke(NotificationEvents.VirtualOn, "Mando virtual encendido", [.. lines]);
     }
 
     /// <summary>
@@ -5099,7 +5295,7 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             lines.Add($"Para encenderlo: {FormatComboButtons(toggleCombo)}");
         }
 
-        _notifyEvent?.Invoke("Mando virtual apagado", [.. lines]);
+        _notifyEvent?.Invoke(NotificationEvents.VirtualOff, "Mando virtual apagado", [.. lines]);
     }
 
     private static string FormatComboButtons(ControllerCombo combo)
@@ -5190,6 +5386,9 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             RestartPhysicalDeviceOnVirtualStart =
                 overrides.RestartPhysicalDeviceOnVirtualStart ??
                 global.RestartPhysicalDeviceOnVirtualStart,
+            ProfileLoadVibrationEnabled =
+                overrides.ProfileLoadVibrationEnabled ??
+                global.ProfileLoadVibrationEnabled,
             MotionCalibrated = local.MotionCalibrated,
             MotionGyroBiasPitchRadS = local.MotionGyroBiasPitchRadS,
             MotionGyroBiasYawRadS = local.MotionGyroBiasYawRadS,
@@ -5204,6 +5403,25 @@ public sealed class ProfilesViewModel : INotifyPropertyChanged
             record,
             new EffectiveSettingsCacheEntry(_globalPreset, effective));
         return effective;
+    }
+
+    /// <summary>
+    /// Devuelve el último color RGB que GDM aplicó al LED del dispositivo
+    /// (incluye el modo «apagado», que se escribe como negro). False si el
+    /// mando no tiene LED controlable o aún no se le ha aplicado color.
+    /// </summary>
+    public bool TryGetLedColor(string deviceKey, out byte red, out byte green, out byte blue)
+    {
+        red = green = blue = 0;
+        if (!_lastLedWrites.TryGetValue(deviceKey, out var write))
+        {
+            return false;
+        }
+
+        red = write.Red;
+        green = write.Green;
+        blue = write.Blue;
+        return true;
     }
 
     private async Task LoadGlobalPresetAsync()

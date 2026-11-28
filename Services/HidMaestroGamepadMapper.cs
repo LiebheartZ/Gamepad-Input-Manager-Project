@@ -138,6 +138,11 @@ public static class HidMaestroGamepadMapper
                 ? NormalizeAxisTarget(mappedTarget, source)
                 : source;
 
+            if (string.Equals(target, GamepadControlCatalog.NoButtonTarget.Id, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
             if (!targetAxes.TryGetValue(target, out double current) ||
                 Math.Abs(value) > Math.Abs(current))
             {
@@ -517,7 +522,8 @@ public static class HidMaestroGamepadMapper
             "RT" => "rightTrigger",
             _ => target
         };
-        return GamepadControlCatalog.Axes.Any(axis => axis.Id == normalized)
+        return normalized == GamepadControlCatalog.NoButtonTarget.Id ||
+               GamepadControlCatalog.Axes.Any(axis => axis.Id == normalized)
             ? normalized
             : sourceId;
     }

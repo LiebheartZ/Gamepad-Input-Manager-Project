@@ -2,10 +2,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <Version>0.1.8</Version>
-    <AssemblyVersion>0.1.8.0</AssemblyVersion>
-    <FileVersion>0.1.8.0</FileVersion>
-    <InformationalVersion>0.1.8</InformationalVersion>
+    <Version>286</Version>
+    <AssemblyVersion>286.0.0.0</AssemblyVersion>
+    <FileVersion>286.0.0.0</FileVersion>
+    <InformationalVersion>286</InformationalVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -41,5 +41,13 @@
   <Target Name="CopyUpdatedSdlRuntime" AfterTargets="CopyFilesToOutputDirectory">
     <Copy SourceFiles="ThirdParty\SDL2\2.32.74\SDL2.dll" DestinationFiles="$(OutDir)SDL2.dll" SkipUnchangedFiles="true" />
     <Copy SourceFiles="ThirdParty\SDL2\2.32.74\SDL3.dll" DestinationFiles="$(OutDir)SDL3.dll" SkipUnchangedFiles="true" />
+  </Target>
+  <!-- dotnet publish recopila los assets nativos del paquete NuGet
+       (SDL2 2.0.20) después de CopyFilesToOutputDirectory y los copia al
+       PublishDir, pisando el SDL2 2.32.74. Este segundo paso garantiza que
+       el runtime correcto quede en la salida publicada. -->
+  <Target Name="CopyUpdatedSdlRuntimePublish" AfterTargets="Publish">
+    <Copy SourceFiles="ThirdParty\SDL2\2.32.74\SDL2.dll" DestinationFiles="$(PublishDir)SDL2.dll" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="ThirdParty\SDL2\2.32.74\SDL3.dll" DestinationFiles="$(PublishDir)SDL3.dll" SkipUnchangedFiles="true" />
   </Target>
 </Project>

@@ -235,7 +235,10 @@ public sealed class JsonControllerRepository : IControllerRepository
                 : settings.BatterySoundEnabled,
             IgnoreExternalColorSignals = settings.IgnoreExternalColorSignals == defaults.IgnoreExternalColorSignals
                 ? null
-                : settings.IgnoreExternalColorSignals
+                : settings.IgnoreExternalColorSignals,
+            ProfileLoadVibrationEnabled = settings.ProfileLoadVibrationEnabled == defaults.ProfileLoadVibrationEnabled
+                ? null
+                : settings.ProfileLoadVibrationEnabled
         };
     }
 

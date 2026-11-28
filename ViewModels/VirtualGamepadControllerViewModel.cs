@@ -146,11 +146,14 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
         _record.SettingOverrides.LedEffectColorIntensity.HasValue;
     public bool IsIgnoreExternalOverridden =>
         _record.SettingOverrides.IgnoreExternalColorSignals.HasValue;
+    public bool IsProfileLoadVibrationOverridden =>
+        _record.SettingOverrides.ProfileLoadVibrationEnabled.HasValue;
     public bool HasSettingOverrides =>
         IsVibrationOverridden || IsAutoStartOverridden || IsAutoHideOverridden ||
         IsLedOverridden || IsPowerOffOverridden || IsInputPollOverridden ||
         IsMotionOverridden || IsMotionIntervalOverridden || IsBatteryOverridden ||
-        IsIgnoreExternalOverridden || IsKeepHiddenOverridden;
+        IsIgnoreExternalOverridden || IsKeepHiddenOverridden ||
+        IsProfileLoadVibrationOverridden;
     public bool UsesGlobalDefaults => !HasSettingOverrides;
 
     private const int InheritNumber = -1;
@@ -245,6 +248,12 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
     {
         get => OverrideState(_record.SettingOverrides.KeepHiddenOnExit);
         set => SetBoolOverride("keepHidden", value);
+    }
+
+    public int ProfileLoadVibrationState
+    {
+        get => OverrideState(_record.SettingOverrides.ProfileLoadVibrationEnabled);
+        set => SetBoolOverride("profileVibration", value);
     }
 
     public bool IsKeepHiddenOverridden => _record.SettingOverrides.KeepHiddenOnExit.HasValue;
@@ -883,6 +892,8 @@ public sealed class VirtualGamepadControllerViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IgnoreExternalState));
         OnPropertyChanged(nameof(KeepHiddenState));
         OnPropertyChanged(nameof(IsKeepHiddenOverridden));
+        OnPropertyChanged(nameof(ProfileLoadVibrationState));
+        OnPropertyChanged(nameof(IsProfileLoadVibrationOverridden));
         OnPropertyChanged(nameof(PowerOffIdleSelection));
         OnPropertyChanged(nameof(InputPollIntervalSelection));
         OnPropertyChanged(nameof(MotionPollIntervalSelection));
