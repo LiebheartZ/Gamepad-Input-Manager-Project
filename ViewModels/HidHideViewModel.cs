@@ -14,12 +14,16 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
     private HidHideStatus? _status;
     private string _statusMessage = "Comprueba el estado de HidHide.";
     private bool _isRefreshing;
+    private bool _isInstalling;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<HidHideControllerItem> Devices { get; } = [];
     public bool ShowEmptyDevicesMessage => Devices.Count == 0;
     public ICommand RefreshCommand { get; }
+    public ICommand InstallCommand { get; }
+    public ICommand OpenInstallWindowCommand { get; }
+    public bool IsDriverUnavailable => _status is { IsAvailable: false };
     public string StatusMessage
     {
         get => _statusMessage;
@@ -46,6 +50,38 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
         _service = service;
         _writeLog = writeLog ?? ((_, _, _) => { });
         RefreshCommand = new AsyncCommand(RefreshStatusAsync, () => !_isRefreshing);
+        InstallCommand = new AsyncCommand(InstallHidHideAsync, () =>
+            !_isRefreshing && !_isInstalling && IsDriverUnavailable);
+        OpenInstallWindowCommand = new AsyncCommand(OpenInstallWindowAsync, () => !_isInstalling);
+    }
+
+    private Task InstallHidHideAsync() => RunInstallDialogAsync();
+
+    private Task OpenInstallWindowAsync() => RunInstallDialogAsync();
+
+    private async Task RunInstallDialogAsync()
+    {
+        if (_isInstalling)
+        {
+            return;
+        }
+
+        _isInstalling = true;
+        OnStatusChanged();
+        try
+        {
+            bool finished = await System.Windows.Application.Current!.Dispatcher
+                .InvokeAsync(new Func<bool>(GDM.Views.HidHideInstallWindow.ShowInstallDialog));
+            if (finished)
+            {
+                await RefreshStatusAsync();
+            }
+        }
+        finally
+        {
+            _isInstalling = false;
+            OnStatusChanged();
+        }
     }
 
     public void UpdateDevices(IEnumerable<ConnectedGamepad> devices)
@@ -234,7 +270,7 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
             StatusMessage = _status switch
             {
                 { IsAvailable: false } =>
-                    "No se encontró el controlador de HidHide activo. Instálalo por separado desde la fuente oficial.",
+                    "HidHide no está instalado. Usa el botón «Instalar HidHide» para descargar e instalar la versión oficial.",
                 { IsEnabled: false } =>
                     "HidHide está disponible, pero su ocultamiento global está desactivado. Actívalo desde la configuración oficial; GDM no cambiará este ajuste.",
                 { IsInverseWhitelist: true } =>
@@ -356,6 +392,11 @@ public sealed class HidHideViewModel : INotifyPropertyChanged
     {
         OnPropertyChanged(nameof(DriverStatus));
         OnPropertyChanged(nameof(CanManageDevices));
+        OnPropertyChanged(nameof(IsDriverUnavailable));
+        if (InstallCommand is AsyncCommand installCommand)
+        {
+            installCommand.NotifyCanExecuteChanged();
+        }
         foreach (HidHideControllerItem item in Devices)
         {
             item.Update(item.Device, item.IsHiddenByGdm, CanManageDevices);

@@ -1096,6 +1096,28 @@
                                        Foreground="{DynamicResource SecondaryTextBrush}"
                                        Text="{Binding HidHide.StatusMessage}"
                                        TextWrapping="Wrap" />
+                            <Border Margin="0,12,0,0"
+                                    Padding="12,10"
+                                    Background="{DynamicResource WarningPanelBrush}"
+                                    BorderBrush="{DynamicResource WarningBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Visibility="{Binding HidHide.IsDriverUnavailable, Converter={StaticResource BoolToVisibility}}">
+                                <DockPanel>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Foreground="{DynamicResource WarningBrush}"
+                                               FontWeight="SemiBold"
+                                               Text="HidHide no está instalado. Sin este driver, GDM no puede ocultar los mandos físicos a los juegos y pueden producirse entradas duplicadas."
+                                               TextWrapping="Wrap" />
+                                    <Button DockPanel.Dock="Right"
+                                            Margin="12,0,0,0"
+                                            MinWidth="130"
+                                            Padding="12,6"
+                                            VerticalAlignment="Center"
+                                            Command="{Binding HidHide.InstallCommand}"
+                                            Content="Instalar HidHide" />
+                                </DockPanel>
+                            </Border>
                         </StackPanel>
                     </Border>
                     <Border Margin="0,14,0,0"
@@ -1465,6 +1487,17 @@
                                            FontSize="11"
                                            Foreground="{DynamicResource SecondaryTextBrush}"
                                            Text="Descarga e instala el último release publicado en GitHub aunque sea la misma build o no supere los criterios del canal. Solo para pruebas; GDM se cerrará y se reiniciará."
+                                           TextWrapping="Wrap" />
+                                <Button Margin="0,18,0,0"
+                                        HorizontalAlignment="Left"
+                                        MinWidth="240"
+                                        Padding="14,8"
+                                        Command="{Binding HidHide.OpenInstallWindowCommand}"
+                                        Content="Abrir ventana de instalación de HidHide" />
+                                <TextBlock Margin="0,8,0,0"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"
+                                           Text="Solo para pruebas: abre la ventana de instalación/descarga de HidHide aunque el driver ya esté instalado."
                                            TextWrapping="Wrap" />
                             </StackPanel>
                         </Grid>
