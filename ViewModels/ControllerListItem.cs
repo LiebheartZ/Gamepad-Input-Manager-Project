@@ -25,6 +25,13 @@ public sealed record ControllerListItem(
 
     public string? BatteryInfoText => ConnectedDevice?.BatteryInfoText;
     public bool HasBatteryInfo => ConnectedDevice?.HasBatteryInfo == true;
+    /// <summary>
+    /// Color LED que GDM tiene aplicado ahora mismo en el mando (según su
+    /// último color escrito). Null = el mando no tiene LED controlable o no
+    /// está conectado; la vista lo muestra como cuadro blanco con raya roja.
+    /// </summary>
+    public System.Windows.Media.Brush? LedColorBrush { get; init; }
+    public bool HasLedColor => LedColorBrush is not null;
     public string? ConnectionTransportText => ConnectedDevice?.ConnectionTransportText;
     public string? DeviceKey => ConnectedDevice?.DeviceKey;
     public bool IsConnected => ConnectedDevice is not null;

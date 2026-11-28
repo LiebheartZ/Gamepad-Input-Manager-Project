@@ -54,14 +54,14 @@ public sealed class UpdateAvailableWindow : Window
             FontSize = 16,
             FontWeight = FontWeights.SemiBold,
             Foreground = text,
-            Text = "Hay una nueva versión de GDM"
+            Text = "Hay una nueva build de GDM"
         });
         stack.Children.Add(new TextBlock
         {
             Margin = new Thickness(0, 8, 0, 0),
             Foreground = accent,
             FontWeight = FontWeights.SemiBold,
-            Text = $"Versión {version} ({tagName})"
+            Text = $"Build {version} ({tagName})"
         });
         stack.Children.Add(new TextBlock
         {

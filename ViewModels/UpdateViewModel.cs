@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.IO;
 using System.Net.Http;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Windows;
@@ -34,7 +33,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
 
     public string RepositoryDisplay => _updateService.RepositoryDisplay;
     public string CurrentVersionLabel { get; } =
-        $"Versión instalada: {GetCurrentVersion()}";
+        $"Build instalado: {AppBuildInfo.Display}";
 
     public ICommand CheckCommand => _checkCommand;
     public ICommand InstallCommand => _installCommand;
@@ -79,7 +78,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
         ? _lastCheckResult.Length > 0
             ? _lastCheckResult
             : "No hay información de actualizaciones todavía."
-        : $"Nueva versión disponible: {_availableUpdate.Version} ({_availableUpdate.TagName})";
+        : $"Nueva build disponible: {_availableUpdate.Version} ({_availableUpdate.TagName})";
 
     public string StatusTitle
     {
@@ -128,7 +127,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
             if (release is null)
             {
                 _availableUpdate = null;
-                _lastCheckResult = "No se encontró una versión publicada en GitHub.";
+                _lastCheckResult = "No se encontró una build publicada en GitHub.";
                 if (!silent)
                 {
                     StatusTitle = "Sin actualizaciones";
@@ -146,13 +145,13 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
                 {
                     StatusTitle = "Actualización disponible";
                     StatusMessage =
-                        $"Hay una nueva versión ({release.Version}). Pulsa «Descargar e instalar» para aplicarla; GDM se cerrará y se reiniciará actualizado.";
+                        $"Hay una nueva build ({release.Version}). Pulsa «Descargar e instalar» para aplicarla; GDM se cerrará y se reiniciará actualizado.";
                 }
             }
             else
             {
                 _availableUpdate = null;
-                _lastCheckResult = $"Ya tienes la versión más reciente ({GetCurrentVersion()}).";
+                _lastCheckResult = $"Ya tienes la build más reciente ({AppBuildInfo.Display}).";
                 if (!silent)
                 {
                     StatusTitle = "Sin actualizaciones";
@@ -170,7 +169,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
             _appLogService?.Write(
                 DiagnosticLogLevel.Warning,
                 "Actualizaciones",
-                "No se pudo consultar la última versión en GitHub.",
+                "No se pudo consultar la última build en GitHub.",
                 exception);
             if (!silent)
             {
@@ -202,7 +201,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
             AppReleaseInfo? release = await _updateService.GetLatestReleaseAsync(UpdateChannels.Nightly);
             if (release is null)
             {
-                StatusTitle = "Sin versiones publicadas";
+                StatusTitle = "Sin builds publicadas";
                 StatusMessage = "No se encontró ningún release en GitHub.";
                 return;
             }
@@ -219,12 +218,12 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
             InvalidOperationException or
             IOException)
         {
-            StatusTitle = "No se pudo buscar la última versión";
+            StatusTitle = "No se pudo buscar la última build";
             StatusMessage = $"No se pudo conectar con GitHub: {exception.Message}";
             _appLogService?.Write(
                 DiagnosticLogLevel.Warning,
                 "Actualizaciones",
-                "No se pudo consultar la última versión en GitHub.",
+                "No se pudo consultar la última build en GitHub.",
                 exception);
         }
         finally
@@ -239,7 +238,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
         if (release?.Package is not { } package)
         {
             StatusTitle = "No hay paquete para instalar";
-            StatusMessage = "La versión publicada no incluye un archivo .zip descargable.";
+            StatusMessage = "La build publicada no incluye un archivo .zip descargable.";
             _appLogService?.Write(
                 DiagnosticLogLevel.Warning,
                 "Actualizaciones",
@@ -273,7 +272,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
                 Environment.ProcessId);
             UpdateInstaller.LaunchDetached(scriptPath);
             StatusTitle = "Actualización lista";
-            StatusMessage = "GDM se cerrará y se reiniciará con la nueva versión.";
+            StatusMessage = "GDM se cerrará y se reiniciará con la nueva build.";
             _appLogService?.Write(
                 DiagnosticLogLevel.Information,
                 "Actualizaciones",
@@ -322,8 +321,7 @@ public sealed class UpdateViewModel : INotifyPropertyChanged
             (remote.Major == current.Major && remote.Minor > current.Minor);
     }
 
-    private static string GetCurrentVersion() =>
-        Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.0.0";
+    private static string GetCurrentVersion() => AppBuildInfo.VersionText;
 
     private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {

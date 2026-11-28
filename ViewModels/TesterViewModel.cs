@@ -424,7 +424,7 @@ public sealed class TesterViewModel : INotifyPropertyChanged
     }
 
     private bool CanTestRumble =>
-        SelectedDevice is { IsVirtualGamepad: not true } && _inputService is not null;
+        SelectedDevice is not null && _inputService is not null;
 
     private async Task RumbleTestAsync(int lowMotor, int highMotor, int durationMs)
     {
@@ -438,6 +438,14 @@ public sealed class TesterViewModel : INotifyPropertyChanged
         _logInputError?.Invoke(
             "Prueba de vibración -> " + device.Name + ": " +
             (sent ? "enviada" : "no admitida por SDL") + " (" + durationMs + " ms).");
+        if (device.IsVirtualGamepad)
+        {
+            InputStatus = sent
+                ? $"Vibración enviada al mando virtual ({durationMs} ms). Si la salida virtual está activa y la vibración habilitada, debe llegar al mando físico."
+                : "Este mando virtual no admite vibración por SDL.";
+            return;
+        }
+
         InputStatus = sent
             ? $"Vibración enviada al mando ({durationMs} ms)."
             : "Este mando no admite vibración por SDL (sin control XInput/HID con rumble).";
@@ -460,10 +468,23 @@ public sealed class TesterViewModel : INotifyPropertyChanged
         SelectedDevice = devices.FirstOrDefault(device => device.DeviceKey == selectedKey)
             ?? devices.FirstOrDefault();
         OnPropertyChanged(nameof(ShowNoDevices));
+        OnPropertyChanged(nameof(DevicesSummary));
         _selectDeviceCommand.NotifyCanExecuteChanged();
     }
 
     public bool ShowNoDevices => Devices.Count == 0;
+
+    /// <summary>Resumen de la lista: mandos físicos, virtuales y ocultos por GDM.</summary>
+    public string DevicesSummary
+    {
+        get
+        {
+            int physical = Devices.Count(device => !device.IsVirtualGamepad);
+            int virtualCount = Devices.Count(device => device.IsVirtualGamepad);
+            int hidden = Devices.Count(device => device.IsHiddenByGdm);
+            return $"Físicos: {physical} · Virtuales: {virtualCount} · Ocultos por GDM: {hidden}";
+        }
+    }
 
     public async Task ReadSelectedInputAsync(CancellationToken cancellationToken = default)
     {

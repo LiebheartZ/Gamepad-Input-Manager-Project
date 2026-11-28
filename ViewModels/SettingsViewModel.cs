@@ -31,7 +31,11 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
     private bool _skipUpdateNotifications;
     private int _virtualInputPollIntervalMs;
     private string _updateChannel = UpdateChannels.Standard;
+    private string _notificationMode = NotificationModes.Always;
+    private double _notificationQueueIntervalSeconds = 3;
+    private bool _batteryNotifyRepeatEnabled = true;
     private int _selectedCategoryIndex;
+    private readonly List<NotificationEventOption> _notificationEventOptions = [];
     private bool _isBusy;
     private string _statusTitle = "Ajustes cargados";
     private string _statusMessage = "El tema seleccionado se aplica al guardar los cambios.";
@@ -62,6 +66,15 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         new(UpdateChannels.Standard, "Estándar"),
         new(UpdateChannels.Nightly, "Nightly")
     ];
+
+    public IReadOnlyList<ThemeOption> NotificationModeOptions { get; } =
+    [
+        new(NotificationModes.Always, "Siempre"),
+        new(NotificationModes.WindowOnly, "Solo con GDM visible"),
+        new(NotificationModes.Off, "Desactivadas")
+    ];
+
+    public IReadOnlyList<NotificationEventOption> NotificationEventOptions { get; }
 
     public IReadOnlyList<string> Categories { get; } =
         ["General", "Interfaz", "Mandos", "Dependencias", "Acerca de", "Actualizaciones", "Debug"];
@@ -167,6 +180,26 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         set => SetProperty(ref _updateChannel, value);
     }
 
+    public string NotificationMode
+    {
+        get => _notificationMode;
+        set => SetProperty(ref _notificationMode, NotificationModes.Normalize(value));
+    }
+
+    public double NotificationQueueIntervalSeconds
+    {
+        get => _notificationQueueIntervalSeconds;
+        set => SetProperty(
+            ref _notificationQueueIntervalSeconds,
+            double.IsFinite(value) ? Math.Clamp(value, 1, 60) : 3);
+    }
+
+    public bool BatteryNotifyRepeatEnabled
+    {
+        get => _batteryNotifyRepeatEnabled;
+        set => SetProperty(ref _batteryNotifyRepeatEnabled, value);
+    }
+
     public int SelectedCategoryIndex
     {
         get => _selectedCategoryIndex;
@@ -217,6 +250,15 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _statusTitle, value);
     }
 
+    public bool BluetoothAutoConnect => _currentSettings.BluetoothAutoConnect;
+    public bool BluetoothAutoPairLoop => _currentSettings.BluetoothAutoPairLoop;
+    public bool BluetoothShowAllDevices => _currentSettings.BluetoothShowAllDevices;
+    public IReadOnlyList<string> BluetoothAutoConnectExcluded => _currentSettings.BluetoothAutoConnectExcluded;
+
+    /// <summary>Estados guardados de cada evento de notificación (Ajustes → Interfaz).</summary>
+    public IReadOnlyDictionary<string, bool> NotificationEventStates =>
+        _currentSettings.NotificationEventStates;
+
     public string StatusMessage
     {
         get => _statusMessage;
@@ -255,6 +297,20 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         _skipUpdateNotifications = settings.SkipUpdateNotifications;
         _updateChannel = UpdateChannels.Normalize(settings.UpdateChannel);
         _virtualInputPollIntervalMs = Math.Clamp(settings.VirtualInputPollIntervalMs, 4, 100);
+        _notificationMode = NotificationModes.Normalize(settings.NotificationMode);
+        _notificationQueueIntervalSeconds =
+            double.IsFinite(settings.NotificationQueueIntervalSeconds)
+                ? Math.Clamp(settings.NotificationQueueIntervalSeconds, 1, 60)
+                : 3;
+        _batteryNotifyRepeatEnabled = settings.BatteryNotifyRepeatEnabled;
+        _notificationEventOptions = NotificationEvents.All
+            .Select(definition => new NotificationEventOption(
+                definition.Id,
+                definition.Label,
+                id => NotificationEvents.IsEnabled(_currentSettings.NotificationEventStates, id),
+                SetNotificationEventEnabledAsync))
+            .ToList();
+        NotificationEventOptions = _notificationEventOptions;
 
         _saveCommand = new AsyncCommand(SaveAsync, () => !IsBusy);
         _restoreDefaultsCommand = new AsyncCommand(RestoreDefaultsAsync, () => !IsBusy);
@@ -310,6 +366,116 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         SkipUpdateNotifications = settings.SkipUpdateNotifications;
         _applySettings(settings);
     }
+    public async Task SetBluetoothAutoConnectAsync(bool autoConnect)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        var settings = _currentSettings with
+        {
+            BluetoothAutoConnect = autoConnect
+        };
+        await _settingsRepository.SaveAsync(settings);
+        _currentSettings = settings;
+        _applySettings(settings);
+    }
+
+    public async Task SetBluetoothAutoPairLoopAsync(bool autoPairLoop)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        var settings = _currentSettings with
+        {
+            BluetoothAutoPairLoop = autoPairLoop
+        };
+        await _settingsRepository.SaveAsync(settings);
+        _currentSettings = settings;
+        _applySettings(settings);
+    }
+
+    public async Task SetBluetoothShowAllDevicesAsync(bool showAllDevices)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        var settings = _currentSettings with
+        {
+            BluetoothShowAllDevices = showAllDevices
+        };
+        await _settingsRepository.SaveAsync(settings);
+        _currentSettings = settings;
+        _applySettings(settings);
+    }
+
+    public async Task SetBluetoothAutoConnectExcludedAsync(IReadOnlyList<string> excludedDevices)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        var settings = _currentSettings with
+        {
+            BluetoothAutoConnectExcluded = excludedDevices.ToList()
+        };
+        await _settingsRepository.SaveAsync(settings);
+        _currentSettings = settings;
+        _applySettings(settings);
+    }
+
+    public bool IsNotificationEventEnabled(string eventId) =>
+        NotificationEvents.IsEnabled(_currentSettings.NotificationEventStates, eventId);
+
+    public async Task SetNotificationEventEnabledAsync(string eventId, bool enabled)
+    {
+        if (IsBusy)
+        {
+            RefreshNotificationEventOptions();
+            return;
+        }
+
+        try
+        {
+            var settings = _currentSettings with
+            {
+                NotificationEventStates = NotificationEvents.WithState(
+                    _currentSettings.NotificationEventStates, eventId, enabled)
+            };
+            await _settingsRepository.SaveAsync(settings);
+            _currentSettings = settings;
+            _applySettings(settings);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            _appLogService?.Write(
+                DiagnosticLogLevel.Warning,
+                "Configuración",
+                $"No se pudo guardar el estado de la notificación «{eventId}»: {exception.Message}");
+        }
+        finally
+        {
+            // La casilla lee el estado en vivo: se fuerza la relectura para
+            // que vuelva a mostrar el valor realmente persistido.
+            RefreshNotificationEventOptions();
+        }
+    }
+
+    private void RefreshNotificationEventOptions()
+    {
+        foreach (NotificationEventOption option in _notificationEventOptions)
+        {
+            option.NotifyStateChanged();
+        }
+    }
+
     public Task SaveAsync() => PersistAsync(
         _currentSettings with
         {
@@ -330,7 +496,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             CheckForUpdatesOnStartup = CheckForUpdatesOnStartup,
             SkipUpdateNotifications = SkipUpdateNotifications,
             UpdateChannel = UpdateChannels.Normalize(UpdateChannel),
-            VirtualInputPollIntervalMs = Math.Clamp(VirtualInputPollIntervalMs, 4, 100)
+            VirtualInputPollIntervalMs = Math.Clamp(VirtualInputPollIntervalMs, 4, 100),
+            NotificationMode = NotificationModes.Normalize(NotificationMode),
+            NotificationQueueIntervalSeconds =
+                double.IsFinite(NotificationQueueIntervalSeconds)
+                    ? Math.Clamp(NotificationQueueIntervalSeconds, 1, 60)
+                    : 3,
+            BatteryNotifyRepeatEnabled = BatteryNotifyRepeatEnabled
         },
         "Se guardaron los ajustes.",
         "Ajustes guardados");
@@ -391,6 +563,13 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
             SkipUpdateNotifications = settings.SkipUpdateNotifications;
             UpdateChannel = settings.UpdateChannel;
             VirtualInputPollIntervalMs = settings.VirtualInputPollIntervalMs;
+            NotificationMode = NotificationModes.Normalize(settings.NotificationMode);
+            NotificationQueueIntervalSeconds =
+                double.IsFinite(settings.NotificationQueueIntervalSeconds)
+                    ? Math.Clamp(settings.NotificationQueueIntervalSeconds, 1, 60)
+                    : 3;
+            BatteryNotifyRepeatEnabled = settings.BatteryNotifyRepeatEnabled;
+            RefreshNotificationEventOptions();
             _applySettings(settings);
             StatusTitle = successTitle;
             StatusMessage = successMessage;
@@ -486,6 +665,48 @@ public sealed class SettingsViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
     public sealed record ThemeOption(string Value, string Label);
+
+    /// <summary>
+    /// Opción de la lista «Eventos con notificación»: el estado se lee en vivo
+    /// desde los ajustes y el setter persiste el cambio de inmediato.
+    /// </summary>
+    public sealed class NotificationEventOption : INotifyPropertyChanged
+    {
+        private readonly Func<string, bool> _isEnabled;
+        private readonly Func<string, bool, Task> _setEnabled;
+
+        public NotificationEventOption(
+            string id,
+            string label,
+            Func<string, bool> isEnabled,
+            Func<string, bool, Task> setEnabled)
+        {
+            Id = id;
+            Label = label;
+            _isEnabled = isEnabled;
+            _setEnabled = setEnabled;
+        }
+
+        public string Id { get; }
+        public string Label { get; }
+
+        public bool IsEnabled
+        {
+            get => _isEnabled(Id);
+            set
+            {
+                if (value != IsEnabled)
+                {
+                    _ = _setEnabled(Id, value);
+                }
+            }
+        }
+
+        internal void NotifyStateChanged() =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsEnabled)));
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+    }
 
     public sealed record PollIntervalOption(int Value, string Label);
 

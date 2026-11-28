@@ -84,4 +84,40 @@ public sealed record ConnectedGamepad
         VendorId is ushort vendorId && ProductId is ushort productId
             ? $"VID: {vendorId:X4} · PID: {productId:X4}"
             : "Identificadores de hardware no disponibles";
+
+    /// <summary>
+    /// Nombre del fabricante según el VID USB; si se desconoce se muestran
+    /// los identificadores de hardware.
+    /// </summary>
+    public string ManufacturerLabel
+    {
+        get
+        {
+            if (VendorId is ushort vendorId)
+            {
+                string? name = vendorId switch
+                {
+                    0x045E => "Microsoft",
+                    0x054C => "Sony",
+                    0x057E => "Nintendo",
+                    0x046D => "Logitech",
+                    0x28DE => "Valve",
+                    0x2DC8 => "8BitDo",
+                    0x2E95 => "8BitDo",
+                    0x0F0D => "Hori",
+                    0x20D6 => "PowerA",
+                    0x1532 => "Razer",
+                    0x1949 => "HyperX",
+                    0x1A34 => "8BitDo",
+                    _ => null
+                };
+                if (name is not null)
+                {
+                    return name;
+                }
+            }
+
+            return HardwareIdLabel;
+        }
+    }
 }

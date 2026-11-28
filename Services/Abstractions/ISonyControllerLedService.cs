@@ -13,6 +13,11 @@ public interface ISonyControllerLedService
 {
     string? LastFailureDetail { get; }
 
+    /// <param name="force">
+    /// Si es true, escribe el reporte aunque coincida con el último aplicado.
+    /// Se usa en el refresco periódico: el mando puede perder el estado del
+    /// LED (reconexión, suspensión, paquete descartado) y hay que re-afirmarlo.
+    /// </param>
     Task<SonyLedApplyResult> TrySetLightBarAsync(
         ConnectedGamepad device,
         byte red,
@@ -20,5 +25,6 @@ public interface ISonyControllerLedService
         byte blue,
         byte brightness,
         int? playerNumber,
+        bool force = false,
         CancellationToken cancellationToken = default);
 }

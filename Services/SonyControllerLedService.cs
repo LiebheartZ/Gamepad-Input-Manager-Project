@@ -38,6 +38,7 @@ public sealed class SonyControllerLedService : ISonyControllerLedService
         byte blue,
         byte brightness,
         int? playerNumber,
+        bool force = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(device.DevicePath))
@@ -48,7 +49,8 @@ public sealed class SonyControllerLedService : ISonyControllerLedService
         string signature = string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
             $"{device.DevicePath}|{red:X2}{green:X2}{blue:X2}|{brightness}|{playerNumber?.ToString() ?? "-"}");
-        if (_lastApplied.TryGetValue(device.DevicePath, out string? last) && last == signature)
+        if (!force &&
+            _lastApplied.TryGetValue(device.DevicePath, out string? last) && last == signature)
         {
             return Task.FromResult(SonyLedApplyResult.Applied);
         }

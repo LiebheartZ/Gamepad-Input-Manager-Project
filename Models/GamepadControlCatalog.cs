@@ -72,4 +72,7 @@ public static class GamepadControlCatalog
         new("leftTrigger", "Gatillo izquierdo", "Gatillo izq."),
         new("rightTrigger", "Gatillo derecho", "Gatillo der.")
     ];
+
+    public static IReadOnlyList<GamepadControlOption> AxisTargets { get; } =
+        [NoButtonTarget, .. Axes];
 }

@@ -48,6 +48,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly AsyncParameterCommand _removeSavedControllerCommand;
     private readonly IProfileRepository? _profileRepository;
     private readonly IHidHideService _hidHideService;
+    private readonly ToastNotificationService _toastService;
     private readonly Func<ControllerProfile, bool>? _confirmDeleteProfile;
     private readonly Func<Guid?>? _defaultProfileId;
     private readonly System.Threading.Timer? _pollTimer;
@@ -60,6 +61,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private CancellationTokenSource? _refreshCancellation;
     private ConnectedGamepad[]? _lastLoggedDevices;
     private readonly HashSet<string> _redundantHideAttempted = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DeviceNotifyTrack> _deviceNotifyStates =
+        new(StringComparer.Ordinal);
+    private bool _deviceNotifyBaselineDone;
+    private bool _bluetoothWarningShown;
+    private const long DeviceDisconnectNotifyGraceMs = 4000;
     private int _isPollQueued;
     private int _isTesterTickRunning;
     private bool _isRefreshing;
@@ -92,9 +98,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ProfilesViewModel Profiles { get; }
     public UpdateViewModel Updates { get; }
     public HidHideViewModel HidHide { get; }
+    public BluetoothViewModel Bluetooth { get; }
     public string? LogFilePath => _appLogService?.LogFilePath;
-    public string VersionLabel { get; } =
-        $"VERSIÓN {ApplicationAssembly.GetName().Version?.ToString(3) ?? "local"}";
+    public string VersionLabel { get; } = $"BUILD {AppBuildInfo.Display}";
     public string ProgressIdLabel { get; } =
         $"ID {ApplicationAssembly.ManifestModule.ModuleVersionId.ToString("N")[..8].ToUpperInvariant()}";
     public string BuildTimestampLabel { get; } = GetBuildTimestampLabel();
@@ -135,8 +141,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public bool IsLogSection => CurrentSection == "Registro";
     public bool IsProfilesSection => CurrentSection == "Perfiles";
     public bool IsHidHideSection => CurrentSection == "HidHide";
+    public bool IsBluetoothSection => CurrentSection == "Bluetooth";
     public bool ShowStatusCard =>
-        !IsLogSection && !IsSettingsSection && !IsTesterSection && !IsProfilesSection && !IsHidHideSection;
+        !IsLogSection && !IsSettingsSection && !IsTesterSection && !IsProfilesSection &&
+        !IsHidHideSection && !IsBluetoothSection;
     public bool HasConnectedGamepads => ConnectedGamepads.Count > 0;
     public bool ShowEmptyDevicesMessage =>
         IsControllerSection && _isControllerDataLoaded && ControllerItems.Count == 0;
@@ -189,6 +197,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(IsLogSection));
                 OnPropertyChanged(nameof(IsProfilesSection));
                 OnPropertyChanged(nameof(IsHidHideSection));
+                OnPropertyChanged(nameof(IsBluetoothSection));
                 OnPropertyChanged(nameof(ShowStatusCard));
                 OnPropertyChanged(nameof(ShowEmptyDevicesMessage));
                 OnPropertyChanged(nameof(ShowConnectedGamepads));
@@ -234,7 +243,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         IHidHideService? hidHideService = null,
         Func<string>? defaultVirtualGamepadType = null,
         Func<Guid?>? defaultProfileId = null,
-        IGlobalPresetRepository? globalPresetRepository = null)
+        IGlobalPresetRepository? globalPresetRepository = null,
+        Action<string, string>? trayBalloon = null)
     {
         _gamepadDetectionService = gamepadDetectionService;
         _appLogService = appLogService;
@@ -256,6 +266,32 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             requestElevatedVirtualGamepad,
             defaultVirtualGamepadType);
         _hidHideService = hidHideService ?? new HidHideService();
+        _toastService = new ToastNotificationService(
+            () => System.Windows.Application.Current?.MainWindow?.IsVisible == true,
+            () => NotificationModes.Normalize(_settingsViewModel?.NotificationMode),
+            balloonFallback: trayBalloon,
+            diagnosticLog: message => _appLogService?.Write(
+                DiagnosticLogLevel.Warning,
+                "Notificaciones",
+                message),
+            queueIntervalMs: () => (int)Math.Round(
+                (_settingsViewModel?.NotificationQueueIntervalSeconds ?? 3) * 1000),
+            onToastActivated: () => System.Windows.Application.Current?.Dispatcher.BeginInvoke(
+                new Action(() =>
+                {
+                    if (System.Windows.Application.Current?.MainWindow is System.Windows.Window window)
+                    {
+                        if (window.WindowState == System.Windows.WindowState.Minimized)
+                        {
+                            window.WindowState = System.Windows.WindowState.Normal;
+                        }
+
+                        window.Show();
+                        window.Activate();
+                    }
+                })),
+            isEventEnabled: eventId => Models.NotificationEvents.IsEnabled(
+                _settingsViewModel?.NotificationEventStates, eventId));
         HidHide = new HidHideViewModel(
             _hidHideService,
             (level, message, exception) => _appLogService?.Write(
@@ -291,14 +327,34 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             isDeviceHiddenByGdm: device =>
                 !string.IsNullOrWhiteSpace(device.DevicePath) &&
                 _hidHideService.IsHiddenByGdm(device.DevicePath),
-            globalPresetRepository: globalPresetRepository);
+            globalPresetRepository: globalPresetRepository,
+            saveUnsavedController: SaveUnsavedControllerFromComboAsync,
+            notifyEvent: (eventId, title, lines) => _toastService.ShowEvent(eventId, title, lines),
+            batteryNotifyRepeatEnabled: () =>
+                _settingsViewModel?.BatteryNotifyRepeatEnabled ?? true);
         Updates = new UpdateViewModel(
             new GitHubUpdateService(),
             () => UpdateChannels.Normalize(_settingsViewModel?.UpdateChannel),
             RequestUpdateInstallExit,
             _appLogService);
+        var bluetoothService = new BluetoothDeviceService(
+            message => _appLogService?.Write(
+                DiagnosticLogLevel.Information,
+                "Bluetooth",
+                message));
+        Bluetooth = new BluetoothViewModel(
+            bluetoothService,
+            _settingsViewModel,
+            _dispatcher,
+            (eventId, title, message) => _toastService.ShowEvent(eventId, title, message),
+            message => _appLogService?.Write(
+                DiagnosticLogLevel.Information,
+                "Bluetooth",
+                message));
+        Bluetooth.Initialize();
         Profiles.PropertyChanged += OnProfilesPropertyChanged;
         Profiles.VirtualPollIntervalChanged += OnVirtualPollIntervalChanged;
+        Profiles.LedColorChanged += OnLedColorChanged;
         NavigateCommand = new NavigationCommand(Navigate);
         _refreshDevicesCommand = new AsyncCommand(
             () => RefreshDevicesAsync(forceRescan: true),
@@ -479,7 +535,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 _appLogService?.Write(
                     DiagnosticLogLevel.Information,
                     "Actualizaciones",
-                    "Se detectó una versión nueva de GDM en GitHub.");
+                    "Se detectó una build nueva de GDM en GitHub.");
                 await PromptUpdateNotificationAsync();
             }
         }
@@ -646,6 +702,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     displayDevices.Select(device => device.DeviceKey).ToArray());
                 RebuildControllerItems();
             }
+            // Después de reconstruir items: la notificación de conexión
+            // necesita el SavedRecord ya vinculado para distinguir mandos
+            // guardados de no guardados.
+            NotifyControllerPresenceChanges(displayDevices);
 
             int hiddenCount = displayDevices.Count(device => device.IsHiddenByGdm);
             StatusTitle = devices.Count == 0
@@ -1123,6 +1183,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 "Control de ocultamiento",
                 "Al cerrar GDM los mandos ocultados se restauran solo si la opción de Ajustes > Mandos está activada; tras un cierre inesperado se recuperan al siguiente inicio."
             ),
+            "Bluetooth" =>
+            (
+                "Bluetooth",
+                "Busca y empareja mandos y dispositivos Bluetooth.",
+                "Dispositivos Bluetooth",
+                "Activa la auto-conexión para que GDM empareje mandos automáticamente al detectarlos, o empareja manualmente desde la lista."
+            ),
             "Registro" =>
             (
                 "Registro",
@@ -1211,7 +1278,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
 
-    public async Task SaveControllerAsync(ControllerListItem item)
+    public async Task<bool> SaveControllerAsync(ControllerListItem item)
     {
         if (item.ConnectedDevice is not { IsVirtualGamepad: false } device ||
             _controllerRepository is null ||
@@ -1221,7 +1288,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             _isRemovingController ||
             IsRefreshing)
         {
-            return;
+            return false;
         }
 
         _isSavingController = true;
@@ -1241,14 +1308,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             {
                 StatusTitle = "El mando ya no está conectado";
                 StatusMessage = "Actualiza la lista y vuelve a intentar guardar el mando.";
-                return;
+                return false;
             }
 
             if (HasSavedSerial(currentDevice))
             {
                 StatusTitle = "El mando ya está guardado";
                 StatusMessage = "GDM ya tiene un registro con el identificador individual de este mando.";
-                return;
+                return false;
             }
 
             DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -1286,6 +1353,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 DiagnosticLogLevel.Information,
                 "Mandos",
                 $"Se guardó el mando «{record.DisplayName}».");
+            return true;
         }
         catch (InvalidDataException exception)
         {
@@ -1320,6 +1388,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             _isSavingController = false;
             NotifyControllerCommandsCanExecuteChanged();
         }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Guarda un mando físico no registrado usando exactamente el mismo flujo
+    /// que el botón «Guardar» de la pestaña Mandos. Lo invoca el combo global
+    /// «guardar mando nuevo» configurado en Ajuste global → Mando virtual.
+    /// </summary>
+    private async Task<bool> SaveUnsavedControllerFromComboAsync(ConnectedGamepad device)
+    {
+        var item = new ControllerListItem(device, null);
+        return await SaveControllerAsync(item);
     }
 
     public async Task RemoveSavedControllerAsync(ControllerListItem item)
@@ -1338,6 +1419,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         NotifyControllerCommandsCanExecuteChanged();
         try
         {
+            // Antes de eliminar: detener la salida virtual del mando (si está
+            // activa) y mostrar el físico si GDM lo tiene oculto, para no
+            // dejarlo oculto sin configuración que lo gestione.
+            await Profiles.StopVirtualOutputForControllerAsync(record.ControllerId);
             await _controllerRepository.DeleteAsync(record.ControllerId);
             SavedControllers.Remove(record);
             _sessionSavedDeviceKeys.Remove(record.ControllerId);
@@ -1451,14 +1536,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         foreach (ControllerRecord record in SavedControllers)
         {
             matchesByControllerId.TryGetValue(record.ControllerId, out ConnectedGamepad? matchingDevice);
-            ControllerItems.Add(new ControllerListItem(matchingDevice, record));
+            ControllerItems.Add(WithCurrentLedColor(new ControllerListItem(matchingDevice, record)));
         }
 
         foreach (ConnectedGamepad device in ConnectedGamepads)
         {
             if (!matchedDeviceKeys.Contains(device.DeviceKey))
             {
-                ControllerItems.Add(new ControllerListItem(device, null));
+                ControllerItems.Add(WithCurrentLedColor(new ControllerListItem(device, null)));
             }
         }
 
@@ -1494,6 +1579,35 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         return all;
+    }
+
+    private ControllerListItem WithCurrentLedColor(ControllerListItem item)
+    {
+        if (item.ConnectedDevice?.DeviceKey is { } deviceKey &&
+            Profiles.TryGetLedColor(deviceKey, out byte red, out byte green, out byte blue))
+        {
+            return item with
+            {
+                LedColorBrush = new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Color.FromRgb(red, green, blue))
+            };
+        }
+
+        return item;
+    }
+
+    private void OnLedColorChanged(string deviceKey, byte red, byte green, byte blue)
+    {
+        _dispatcher.BeginInvoke(() =>
+        {
+            for (int index = 0; index < ControllerItems.Count; index++)
+            {
+                if (ControllerItems[index].ConnectedDevice?.DeviceKey == deviceKey)
+                {
+                    ControllerItems[index] = WithCurrentLedColor(ControllerItems[index]);
+                }
+            }
+        });
     }
 
     private IEnumerable<ControllerListItem> GetProfilesVisibleControllerItems()
@@ -1884,7 +1998,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         _bluetoothStatusTimer.Stop();
         _idlePowerOffTimer.Tick -= OnIdlePowerOffTimerTick;
         _testerViewModel.PropertyChanged -= OnTesterPropertyChanged;
+        Profiles.LedColorChanged -= OnLedColorChanged;
         Tester.Dispose();
+        Bluetooth.Dispose();
         _pollTimer?.Dispose();
         _deviceEventTimer?.Dispose();
         if (_gamepadDetectionService is not null)
@@ -1955,6 +2071,255 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         BluetoothStatusForeground = state == BluetoothRadioState.On
             ? BluetoothOnBrush
             : BluetoothOffBrush;
+
+        if (state == BluetoothRadioState.Off && !_bluetoothWarningShown)
+        {
+            _bluetoothWarningShown = true;
+            _toastService.ShowEvent(
+                Models.NotificationEvents.BluetoothOff,
+                "Bluetooth desactivado",
+                "Activa el Bluetooth de Windows para conectar mandos inalámbricos por Bluetooth.");
+        }
+    }
+
+    /// <summary>
+    /// Compara la lista de mandos físicos con la anterior y emite toasts de
+    /// conexión/desconexión. La primera llamada solo establece la línea base
+    /// para no notificar todos los mandos ya conectados al abrir GDM. Los
+    /// mandos virtuales y las interfaces redundantes se ignoran.
+    /// </summary>
+    private void NotifyControllerPresenceChanges(IReadOnlyList<ConnectedGamepad> displayDevices)
+    {
+        long now = Environment.TickCount64;
+        var current = new Dictionary<string, ConnectedGamepad>(StringComparer.Ordinal);
+        foreach (ConnectedGamepad device in displayDevices)
+        {
+            if (device.IsVirtualGamepad || device.IsRedundantInterface)
+            {
+                continue;
+            }
+
+            current[PhysicalNotifyIdentity(device)] = device;
+        }
+
+        if (!_deviceNotifyBaselineDone)
+        {
+            _deviceNotifyBaselineDone = true;
+            foreach (KeyValuePair<string, ConnectedGamepad> pair in current)
+            {
+                _deviceNotifyStates[pair.Key] = new DeviceNotifyTrack(pair.Value);
+            }
+
+            return;
+        }
+
+        // Adopción de identidad: si un mando cambia de clave de notificación
+        // (p. ej. la ruta SDL pasa de «XInput#N» a la ruta HID real, o el
+        // número de serie aparece en una enumeración posterior), no debe
+        // contar como desconexión + conexión.
+        var adoptedKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (KeyValuePair<string, DeviceNotifyTrack> pair in _deviceNotifyStates.ToArray())
+        {
+            if (current.ContainsKey(pair.Key))
+            {
+                continue;
+            }
+
+            ConnectedGamepad? match = current.Values.FirstOrDefault(
+                candidate => !adoptedKeys.Contains(PhysicalNotifyIdentity(candidate)) &&
+                    IsSamePhysicalNotifyDevice(pair.Value.Device, candidate));
+            if (match is null)
+            {
+                continue;
+            }
+
+            string newKey = PhysicalNotifyIdentity(match);
+            if (_deviceNotifyStates.ContainsKey(newKey))
+            {
+                continue;
+            }
+
+            _deviceNotifyStates.Remove(pair.Key);
+            pair.Value.Device = match;
+            pair.Value.MissingSinceMs = null;
+            _deviceNotifyStates[newKey] = pair.Value;
+            adoptedKeys.Add(newKey);
+        }
+
+        foreach (KeyValuePair<string, DeviceNotifyTrack> pair in _deviceNotifyStates.ToArray())
+        {
+            if (current.ContainsKey(pair.Key))
+            {
+                continue;
+            }
+
+            DeviceNotifyTrack track = pair.Value;
+            if (track.MissingSinceMs is not long missingSince)
+            {
+                track.MissingSinceMs = now;
+                continue;
+            }
+
+            if (now - missingSince < DeviceDisconnectNotifyGraceMs)
+            {
+                continue;
+            }
+
+            _deviceNotifyStates.Remove(pair.Key);
+            // Al desconectarse no tiene sentido mostrar transporte ni batería
+            // (datos de la última lectura, ya obsoletos): solo el nombre.
+            _toastService.ShowEvent(
+                Models.NotificationEvents.ControllerDisconnected,
+                "Mando desconectado",
+                track.Device.Name);
+        }
+
+        foreach (KeyValuePair<string, ConnectedGamepad> pair in current)
+        {
+            if (adoptedKeys.Contains(pair.Key))
+            {
+                continue;
+            }
+
+            ConnectedGamepad device = pair.Value;
+            if (_deviceNotifyStates.TryGetValue(pair.Key, out DeviceNotifyTrack? track))
+            {
+                track.Device = device;
+                track.MissingSinceMs = null;
+                continue;
+            }
+
+            _deviceNotifyStates[pair.Key] = new DeviceNotifyTrack(device);
+            ShowControllerConnectedNotification(device);
+        }
+    }
+
+    /// <summary>
+    /// Compara dos enumeraciones del mismo mando físico aunque SDL las
+    /// identifique con claves distintas (serie tardía, ruta XInput→HID, etc.).
+    /// </summary>
+    private static bool IsSamePhysicalNotifyDevice(ConnectedGamepad a, ConnectedGamepad b)
+    {
+        if (!string.IsNullOrWhiteSpace(a.SerialNumber) &&
+            !string.IsNullOrWhiteSpace(b.SerialNumber))
+        {
+            return string.Equals(a.SerialNumber, b.SerialNumber, StringComparison.Ordinal);
+        }
+
+        if (!string.IsNullOrWhiteSpace(a.DevicePath) &&
+            !string.IsNullOrWhiteSpace(b.DevicePath))
+        {
+            return string.Equals(a.DevicePath, b.DevicePath, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return a.VendorId is not null && a.VendorId == b.VendorId &&
+            a.ProductId is not null && a.ProductId == b.ProductId &&
+            string.Equals(a.Name, b.Name, StringComparison.Ordinal) &&
+            string.IsNullOrWhiteSpace(a.SerialNumber) &&
+            string.IsNullOrWhiteSpace(b.SerialNumber);
+    }
+
+    private static string PhysicalNotifyIdentity(ConnectedGamepad device) =>
+        !string.IsNullOrWhiteSpace(device.SerialNumber)
+            ? $"serial:{device.SerialNumber}"
+            : !string.IsNullOrWhiteSpace(device.DevicePath)
+                ? $"path:{device.DevicePath}"
+                : $"vidpid:{device.VendorId?.ToString("X4")}:{device.ProductId?.ToString("X4")}:{device.Name}";
+
+    private void ShowControllerConnectedNotification(ConnectedGamepad device)
+    {
+        ControllerListItem? item = ControllerItems.FirstOrDefault(
+            entry => entry.ConnectedDevice?.DeviceKey == device.DeviceKey);
+        ControllerRecord? record = item?.SavedRecord;
+
+        if (record is null)
+        {
+            ShowNewControllerNotification(device);
+            return;
+        }
+
+        ShowSavedControllerConnectedNotification(device, record);
+    }
+
+    /// <summary>
+    /// Mando físico sin guardar: título «Nueva conexión» con nombre,
+    /// fabricante, batería y el combo configurado para guardarlo.
+    /// </summary>
+    private void ShowNewControllerNotification(ConnectedGamepad device)
+    {
+        var lines = new List<string> { $"Mando: {device.Name}" };
+
+        string manufacturer = ResolveManufacturerLabel(device);
+        lines.Add($"Fabricante: {manufacturer}");
+        if (device.HasBatteryInfo)
+        {
+            lines.Add(device.BatteryInfoText);
+        }
+
+        NewControllerSaveCombo saveCombo = Profiles.GlobalPreset.SaveNewControllerCombo;
+        if (saveCombo.Enabled && saveCombo.Buttons.Count > 0)
+        {
+            lines.Add(
+                $"Para guardar: mantén {FormatComboButtons(saveCombo.Buttons, saveCombo.HoldMilliseconds)}");
+        }
+
+        _toastService.ShowEvent(
+            Models.NotificationEvents.ControllerConnected,
+            "Nueva conexión", [.. lines]);
+    }
+
+    /// <summary>
+    /// Mando físico guardado: título con el nombre del mando y líneas con
+    /// conexión, batería, perfil y tipo de mando virtual.
+    /// </summary>
+    private void ShowSavedControllerConnectedNotification(
+        ConnectedGamepad device,
+        ControllerRecord record)
+    {
+        string profileName = record.ProfileId is Guid profileId
+            ? Profiles.Profiles.FirstOrDefault(profile => profile.ProfileId == profileId)
+                  ?.DisplayName ?? "Perfil por mando"
+            : ControllerProfile.GlobalPresetName;
+        string virtualType = Profiles.ResolveVirtualGamepadType(record);
+
+        var lines = new List<string>
+        {
+            $"Conexión: {device.ConnectionTransportText ?? "Desconocida"}"
+        };
+        if (device.HasBatteryInfo)
+        {
+            lines.Add(device.BatteryInfoText);
+        }
+
+        lines.Add($"Perfil: {profileName}");
+        lines.Add($"Mando virtual: {VirtualGamepadTypes.DisplayName(virtualType)}");
+
+        _toastService.ShowEvent(
+            Models.NotificationEvents.ControllerConnected,
+            device.Name, [.. lines]);
+    }
+
+    private static string FormatComboButtons(IReadOnlyList<string> buttonIds, int holdMilliseconds)
+    {
+        string names = string.Join(
+            " + ",
+            buttonIds.Select(id => GamepadControlCatalog.Buttons
+                .FirstOrDefault(option => option.Id == id)?.DisplayName ?? id));
+        double seconds = holdMilliseconds / 1000d;
+        return seconds > 0 ? $"{names} durante {seconds:0.#} s" : names;
+    }
+
+    /// <summary>
+    /// Nombre del fabricante según el VID USB; si se desconoce se muestran
+    /// los identificadores de hardware.
+    /// </summary>
+    private static string ResolveManufacturerLabel(ConnectedGamepad device) =>
+        device.ManufacturerLabel;
+
+    private sealed class DeviceNotifyTrack(ConnectedGamepad device)
+    {
+        public ConnectedGamepad Device { get; set; } = device;
+        public long? MissingSinceMs { get; set; }
     }
     private static string GetBuildTimestampLabel()
     {

@@ -8,6 +8,7 @@ namespace GDM.Services.Persistence;
 public sealed class AppLogService : IAppLogService
 {
     private const int MaximumRetainedEntries = 1000;
+    private const long MaximumLogFileBytes = 2 * 1024 * 1024;
     private readonly object _sync = new();
     private readonly Queue<DiagnosticLogEntry> _entries = new();
     private readonly string _logFilePath;
@@ -68,6 +69,23 @@ public sealed class AppLogService : IAppLogService
                 }
 
                 Directory.CreateDirectory(directory);
+
+                // Rotación simple: al superar 2 MB el archivo actual pasa a
+                // gdm.old.log (sobrescribiendo el anterior) y se empieza uno
+                // nuevo. Evita que el registro crezca indefinidamente en
+                // sesiones largas con la app en bandeja.
+                var fileInfo = new FileInfo(_logFilePath);
+                if (fileInfo.Exists && fileInfo.Length > MaximumLogFileBytes)
+                {
+                    string oldPath = $"{_logFilePath}.old";
+                    if (File.Exists(oldPath))
+                    {
+                        File.Delete(oldPath);
+                    }
+
+                    File.Move(_logFilePath, oldPath);
+                }
+
                 File.AppendAllText(_logFilePath, Format(entry) + Environment.NewLine);
             }
             catch (IOException logException)

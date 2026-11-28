@@ -43,6 +43,7 @@ public sealed record DeviceSettingOverrides
     public bool? IgnoreExternalColorSignals { get; init; }
     public string? VirtualGamepadType { get; init; }
     public bool? RestartPhysicalDeviceOnVirtualStart { get; init; }
+    public bool? ProfileLoadVibrationEnabled { get; init; }
 }
 
 public sealed record ControllerIdentity
@@ -84,6 +85,7 @@ public sealed record ControllerSettings
     public bool LedEffectColorIntensity { get; init; }
     public bool IgnoreExternalColorSignals { get; init; }
     public bool RestartPhysicalDeviceOnVirtualStart { get; init; }
+    public bool ProfileLoadVibrationEnabled { get; init; }
 }
 
 public static class BatteryAlertLevels

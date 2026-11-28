@@ -33,6 +33,44 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
+        // Modo helper de emparejamiento Bluetooth: GDM.Pair.exe corre sin
+        // privilegios (lanzado vía explorer.exe) porque PairAsync falla en
+        // procesos elevados en algunos equipos (Windows 10).
+        if (GDM.Services.BluetoothPairHelper.IsPairHelperProcess)
+        {
+            int pairExitCode = await GDM.Services.BluetoothPairHelper.RunAsync();
+            Shutdown(pairExitCode);
+            return;
+        }
+
+        // Modo helper: cuando el ejecutable corre como GDM.Notify.exe (hardlink
+        // lanzado por explorer.exe desde la instancia elevada), muestra los
+        // toasts pendientes y sale. Se procesa antes del coordinador de
+        // instancia única para no chocar con la instancia principal.
+        if (ToastNotificationService.IsNotifyHelperProcess)
+        {
+            int shown = ToastNotificationService.ShowPendingToasts();
+            try
+            {
+                bool elevated = new System.Security.Principal.WindowsPrincipal(
+                    System.Security.Principal.WindowsIdentity.GetCurrent())
+                    .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+                string marker = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "GDM", "helper-log.txt");
+                File.AppendAllText(marker,
+                    $"{DateTime.Now:HH:mm:ss.fff} shown={shown} elevado={elevated}" +
+                    (ToastNotificationService.LastToastError is { } err ? $" error={err}" : string.Empty) +
+                    "\n");
+            }
+            catch
+            {
+            }
+
+            Shutdown();
+            return;
+        }
+
         _singleInstanceCoordinator = new SingleInstanceCoordinator();
         bool isStartupVirtualGamepad = e.Args.Contains(
             "--start-virtual-gamepad",
@@ -79,6 +117,7 @@ public partial class App : System.Windows.Application
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         logService.Write(DiagnosticLogLevel.Information, "GDM", "Inicio de la aplicación.");
+        ToastNotificationService.CleanupStalePendingToasts();
         _ = _singleInstanceCoordinator.StartListeningAsync(
             ActivatePrimaryWindow,
             exception => logService.Write(
@@ -152,7 +191,11 @@ public partial class App : System.Windows.Application
             logService,
             windowsStartupService);
         _settingsViewModel = settingsViewModel;
-        var gamepadDetectionService = new Sdl2GamepadDetectionService();
+        var gamepadDetectionService = new Sdl2GamepadDetectionService(
+            message => logService.Write(
+                DiagnosticLogLevel.Information,
+                "SDL2 mapeo",
+                message));
         var controllerRepository = new JsonControllerRepository(StoragePaths);
         var profileRepository = new JsonProfileRepository(StoragePaths);
         var globalPresetRepository = new JsonGlobalPresetRepository(StoragePaths);

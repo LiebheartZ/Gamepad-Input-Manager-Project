@@ -111,6 +111,8 @@ public sealed class GlobalPresetViewModel : INotifyPropertyChanged
         new UnsavedDevicesOption((int)GlobalPresetUnsavedMode.ViewOnly, "Solo aplicar ajustes"),
         new UnsavedDevicesOption((int)GlobalPresetUnsavedMode.TempTab, "Ajuste temporal con pestaña")
     ];
+    public IReadOnlyList<GamepadControlOption> SaveComboButtonOptions { get; } =
+        GamepadControlCatalog.Buttons;
     public IReadOnlyList<LedColorSlot> LedPlayerColorSlots => _ledPlayerColorSlots;
 
     private ControllerSettings Settings => _draft.Settings;
@@ -270,12 +272,80 @@ public sealed class GlobalPresetViewModel : INotifyPropertyChanged
         set => MutateSettings(s => s with { IgnoreExternalColorSignals = value });
     }
 
+    public bool ProfileLoadVibrationEnabled
+    {
+        get => Settings.ProfileLoadVibrationEnabled;
+        set => MutateSettings(s => s with { ProfileLoadVibrationEnabled = value });
+    }
+
     public int UnsavedDevicesMode
     {
         get => (int)_draft.UnsavedDevices;
         set => Mutate(preset => preset with
         {
             UnsavedDevices = GlobalPresetModes.Normalize(value)
+        });
+    }
+
+    public bool SaveComboEnabled
+    {
+        get => _draft.SaveNewControllerCombo.Enabled;
+        set => Mutate(preset => preset with
+        {
+            SaveNewControllerCombo = preset.SaveNewControllerCombo with { Enabled = value }
+        });
+    }
+
+    public int SaveComboHoldSeconds
+    {
+        get => _draft.SaveNewControllerCombo.HoldMilliseconds / 1000;
+        set => Mutate(preset => preset with
+        {
+            SaveNewControllerCombo = preset.SaveNewControllerCombo with
+            {
+                HoldMilliseconds = NewControllerSaveCombo.NormalizeHold(value * 1000)
+            }
+        });
+    }
+
+    public string SaveComboButton1
+    {
+        get => _draft.SaveNewControllerCombo.Buttons.ElementAtOrDefault(0) ?? "back";
+        set => SetSaveComboButton(0, value);
+    }
+
+    public string SaveComboButton2
+    {
+        get => _draft.SaveNewControllerCombo.Buttons.ElementAtOrDefault(1) ?? "start";
+        set => SetSaveComboButton(1, value);
+    }
+
+    private void SetSaveComboButton(int index, string buttonId)
+    {
+        if (!GamepadControlCatalog.Buttons.Any(option => option.Id == buttonId))
+        {
+            return;
+        }
+
+        List<string> buttons = [.. _draft.SaveNewControllerCombo.Buttons];
+        while (buttons.Count <= index)
+        {
+            buttons.Add(index == 0 ? "back" : "start");
+        }
+
+        buttons[index] = buttonId;
+        buttons = buttons
+            .Where(button => GamepadControlCatalog.Buttons.Any(option => option.Id == button))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (buttons.Count == 0)
+        {
+            buttons.Add("back");
+        }
+
+        Mutate(preset => preset with
+        {
+            SaveNewControllerCombo = preset.SaveNewControllerCombo with { Buttons = buttons }
         });
     }
 
@@ -322,6 +392,7 @@ public sealed class GlobalPresetViewModel : INotifyPropertyChanged
         GlobalPreset preset = _draft with
         {
             Settings = normalized,
+            SaveNewControllerCombo = _draft.SaveNewControllerCombo.Normalize(),
             UpdatedAtUtc = DateTimeOffset.UtcNow
         };
         await _save(preset);
@@ -428,7 +499,12 @@ public sealed class GlobalPresetViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(BatteryNotifyEnabled));
         OnPropertyChanged(nameof(BatterySoundEnabled));
         OnPropertyChanged(nameof(IgnoreExternalColorSignals));
+        OnPropertyChanged(nameof(ProfileLoadVibrationEnabled));
         OnPropertyChanged(nameof(UnsavedDevicesMode));
+        OnPropertyChanged(nameof(SaveComboEnabled));
+        OnPropertyChanged(nameof(SaveComboHoldSeconds));
+        OnPropertyChanged(nameof(SaveComboButton1));
+        OnPropertyChanged(nameof(SaveComboButton2));
         OnPropertyChanged(nameof(IsDirty));
     }
 

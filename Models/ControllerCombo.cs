@@ -8,20 +8,23 @@ public static class ComboActionTypes
     public const string StopOutput = "stopOutput";
     public const string SwitchType = "switchType";
     public const string PowerOff = "powerOff";
+    public const string ShowInfo = "showInfo";
 
     public static IReadOnlyList<ComboActionOption> Options { get; } =
     [
         new(Buttons, "Pulsar botones en el mando virtual"),
         new(StopOutput, "Alternar salida virtual (encender/apagar)"),
         new(SwitchType, "Cambiar tipo de mando virtual"),
-        new(PowerOff, "Apagar el mando físico")
+        new(PowerOff, "Apagar el mando físico"),
+        new(ShowInfo, "Mostrar información del mando")
     ];
 
     public static bool IsSupported(string? actionType) =>
         string.Equals(actionType, Buttons, StringComparison.Ordinal) ||
         string.Equals(actionType, StopOutput, StringComparison.Ordinal) ||
         string.Equals(actionType, SwitchType, StringComparison.Ordinal) ||
-        string.Equals(actionType, PowerOff, StringComparison.Ordinal);
+        string.Equals(actionType, PowerOff, StringComparison.Ordinal) ||
+        string.Equals(actionType, ShowInfo, StringComparison.Ordinal);
 
     public static string Normalize(string? actionType) =>
         IsSupported(actionType) ? actionType! : Buttons;
